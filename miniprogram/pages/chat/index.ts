@@ -1,5 +1,5 @@
 // chat/index.ts
-const BASE_URL = 'https://backend.wulisu.icu'; // 后端基地址
+const BASE_URL = 'https://your-backend-domain.com'; // 后端基地址（示例，占位值，请替换为你自己的后端域名）
 const API_PATH = '/api/wechat/message';
 const MESSAGES_STORAGE_KEY = 'chat_messages_history'; // 历史记录存储键
 const MAX_MESSAGE_COUNT = 100; // 最大消息数量
@@ -275,7 +275,7 @@ Page({
       // 如果 err 有 errMsg 属性
       if (err.errMsg && typeof err.errMsg === 'string') {
         if (err.errMsg.includes('url not in domain list')) {
-          return '域名未配置：请在微信公众平台配置服务器域名 https://backend.wulisu.icu，或在开发工具中关闭"不校验合法域名"';
+          return '域名未配置：请在微信公众平台配置服务器域名（例如 https://your-backend-domain.com），或在开发工具中关闭"不校验合法域名"';
         } else if (err.errMsg.includes('fail') || err.errMsg.includes('timeout')) {
           return `请求失败: ${err.errMsg}`;
         }
