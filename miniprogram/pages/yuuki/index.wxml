@@ -51,7 +51,7 @@
         />
       </view>
       <view class="login-actions">
-        <button class="main-btn login-main" data-typ="all" bindtap="quickAllowLogin" loading="{{actionLoading.indexOf('allow:') === 0}}" disabled="{{actionLoading}}">允许登录</button>
+        <button class="main-btn login-main" data-typ="all" bindtap="quickAllowLogin" loading="{{actionLoading !== ''}}" disabled="{{actionLoading}}">允许登录</button>
         <button class="secondary-btn" data-typ="ip_add" bindtap="quickAllowLogin" disabled="{{actionLoading}}">服务器 IP</button>
       </view>
     </view>
