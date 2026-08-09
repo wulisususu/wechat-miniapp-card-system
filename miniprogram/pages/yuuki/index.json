@@ -1,0 +1,8 @@
+{
+  "navigationStyle": "custom",
+  "enablePullDownRefresh": true,
+  "backgroundColor": "#f5f6f8",
+  "usingComponents": {
+    "business-switcher": "/components/business-switcher/index"
+  }
+}
