@@ -1,12 +1,14 @@
 {
   "pages": [
     "pages/chat/index",
+    "pages/yuuki/index",
     "pages/index/index",
     "pages/logs/logs"
   ],
   "window": {
     "navigationBarTextStyle": "black",
-    "navigationStyle": "custom"
+    "navigationStyle": "custom",
+    "backgroundColor": "#f5f6f8"
   },
   "style": "v2",
   "rendererOptions": {
