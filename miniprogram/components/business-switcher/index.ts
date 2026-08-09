@@ -1,13 +1,7 @@
 Component({
   properties: {
-    current: {
-      type: String,
-      value: 'test-server'
-    },
-    title: {
-      type: String,
-      value: '测试服'
-    }
+    current: { type: String, value: 'test-server' },
+    title: { type: String, value: '测试服' }
   },
   data: {
     open: false,
@@ -31,17 +25,14 @@ Component({
       if (this.data.open) this.setData({ open: false });
     },
     noop() {},
-    switchBusiness(e: WechatMiniprogram.TouchEvent) {
+    switchBusiness(e: any) {
       const target = e.currentTarget.dataset.target as string;
       if (!target || target === this.data.current) {
         this.close();
         return;
       }
-
       this.setData({ open: false }, () => {
-        wx.redirectTo({
-          url: target === 'yuuki' ? '/pages/yuuki/index' : '/pages/chat/index'
-        });
+        wx.redirectTo({ url: target === 'yuuki' ? '/pages/yuuki/index' : '/pages/chat/index' });
       });
     }
   }
