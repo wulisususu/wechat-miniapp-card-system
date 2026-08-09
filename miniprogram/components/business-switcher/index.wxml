@@ -1,0 +1,23 @@
+<view class="shell">
+  <view class="topbar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="nav-row">
+      <button class="menu-button" bindtap="toggle" aria-label="切换模块">
+        <view class="menu-line"></view><view class="menu-line"></view><view class="menu-line"></view>
+      </button>
+      <text class="page-title">{{title}}</text>
+      <view class="nav-spacer"></view>
+    </view>
+  </view>
+  <view class="drawer-layer {{open ? 'is-open' : ''}}" catchtouchmove="noop">
+    <view class="drawer-backdrop" bindtap="close"></view>
+    <view class="drawer" style="padding-top: {{statusBarHeight}}px;">
+      <view class="drawer-head"><text class="drawer-title">管理系统</text><text class="drawer-subtitle">切换功能模块</text></view>
+      <view class="drawer-item {{current === 'test-server' ? 'active' : ''}}" data-target="test-server" bindtap="switchBusiness">
+        <view class="item-icon test-icon">测</view><view class="item-copy"><text class="item-title">测试服</text><text class="item-desc">指令 / 卡密 / 会话</text></view><text class="item-check" wx:if="{{current === 'test-server'}}">✓</text>
+      </view>
+      <view class="drawer-item {{current === 'yuuki' ? 'active' : ''}}" data-target="yuuki" bindtap="switchBusiness">
+        <view class="item-icon yuuki-icon">Y</view><view class="item-copy"><text class="item-title">Yuuki 号池</text><text class="item-desc">注册 / 取号 / 管理</text></view><text class="item-check" wx:if="{{current === 'yuuki'}}">✓</text>
+      </view>
+    </view>
+  </view>
+</view>
