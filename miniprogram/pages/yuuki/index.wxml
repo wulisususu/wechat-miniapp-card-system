@@ -1,0 +1,91 @@
+<view class="page">
+  <business-switcher current="yuuki" title="Yuuki 号池" />
+
+  <scroll-view class="content" scroll-y enhanced show-scrollbar="{{false}}">
+    <view class="hero-card">
+      <view class="hero-copy">
+        <text class="hero-title">账号号池</text>
+        <text class="hero-subtitle">注册、取号与状态管理</text>
+      </view>
+      <button class="refresh-btn" bindtap="refreshAll" loading="{{loading}}">刷新</button>
+    </view>
+
+    <view class="stats-grid">
+      <view class="stat-card"><text class="stat-number">{{stats.total}}</text><text class="stat-label">总数</text></view>
+      <view class="stat-card available"><text class="stat-number">{{stats.available}}</text><text class="stat-label">可用</text></view>
+      <view class="stat-card issued"><text class="stat-number">{{stats.issued}}</text><text class="stat-label">已发出</text></view>
+      <view class="stat-card discarded"><text class="stat-number">{{stats.discarded}}</text><text class="stat-label">已废弃</text></view>
+    </view>
+
+    <view class="action-card">
+      <view class="section-head">
+        <view><text class="section-title">在线注册</text><text class="section-desc">单次 1 - 3 个账号</text></view>
+      </view>
+      <view class="register-row">
+        <view class="count-group">
+          <button wx:for="{{[1,2,3]}}" wx:key="*this" class="count-btn {{registerCount === item ? 'active' : ''}}" data-count="{{item}}" bindtap="setRegisterCount">{{item}}</button>
+        </view>
+        <button class="primary-btn" bindtap="registerAccounts" loading="{{actionLoading === 'register'}}" disabled="{{!!actionLoading}}">开始注册</button>
+      </view>
+    </view>
+
+    <view class="action-card take-card">
+      <view>
+        <text class="section-title">快速取号</text>
+        <text class="section-desc">按号池顺序取最早可用账号，并自动复制账号密码</text>
+      </view>
+      <button class="take-btn" bindtap="takeNext" loading="{{actionLoading === 'next'}}" disabled="{{!!actionLoading}}">取一个账号</button>
+    </view>
+
+    <view class="list-card">
+      <view class="search-row">
+        <view class="search-box">
+          <text class="search-icon">⌕</text>
+          <input value="{{keyword}}" bindinput="onKeywordInput" bindconfirm="onSearch" confirm-type="search" placeholder="搜索账号 / 备注" />
+          <text wx:if="{{keyword}}" class="clear-btn" bindtap="clearSearch">×</text>
+        </view>
+        <button class="search-btn" bindtap="onSearch">查询</button>
+      </view>
+
+      <scroll-view class="filter-scroll" scroll-x show-scrollbar="{{false}}">
+        <view class="filter-row">
+          <button wx:for="{{statusOptions}}" wx:key="value" class="filter-chip {{status === item.value ? 'active' : ''}}" data-status="{{item.value}}" bindtap="changeStatus">{{item.label}}</button>
+        </view>
+      </scroll-view>
+
+      <view class="list-meta"><text>共 {{total}} 个账号</text><text wx:if="{{loading}}">更新中…</text></view>
+
+      <view wx:if="{{!loading && !items.length}}" class="empty-state">
+        <text class="empty-title">暂无账号</text>
+        <text class="empty-desc">可以在线注册，或调整搜索条件。</text>
+      </view>
+
+      <view wx:for="{{items}}" wx:key="id" class="account-card">
+        <view class="account-top">
+          <view class="account-main">
+            <text class="username">{{item.username}}</text>
+            <text class="password">{{item.password}}</text>
+          </view>
+          <text class="status-badge status-{{item.status}}">{{item.status === 'available' ? '可用' : item.status === 'issued' ? '已发出' : '已废弃'}}</text>
+        </view>
+        <view class="account-info" wx:if="{{item.remark || item.source}}">
+          <text wx:if="{{item.source}}">{{item.source}}</text>
+          <text wx:if="{{item.remark}}">{{item.remark}}</text>
+        </view>
+        <view class="account-actions">
+          <button class="mini-btn" data-username="{{item.username}}" data-password="{{item.password}}" bindtap="copyAccount">复制</button>
+          <block wx:if="{{item.status !== 'discarded'}}">
+            <button class="mini-btn allow" data-username="{{item.username}}" data-typ="all" bindtap="allowLogin">所有 IP</button>
+            <button class="mini-btn ip" data-username="{{item.username}}" data-typ="ip_add" bindtap="allowLogin">服务器 IP</button>
+            <button wx:if="{{item.status === 'issued'}}" class="mini-btn release" data-username="{{item.username}}" bindtap="releaseAccount">回池</button>
+            <button class="mini-btn danger" data-username="{{item.username}}" bindtap="discardAccount">废弃</button>
+          </block>
+          <text wx:else class="discard-note">已废弃，仅保留标记</text>
+        </view>
+      </view>
+
+      <view wx:if="{{hasMore}}" class="more-note">当前显示前 {{pageSize}} 条，可通过搜索快速定位账号</view>
+    </view>
+    <view class="safe-space"></view>
+  </scroll-view>
+</view>
