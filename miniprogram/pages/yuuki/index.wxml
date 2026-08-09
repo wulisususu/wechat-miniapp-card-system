@@ -23,9 +23,9 @@
       </view>
       <view class="register-row">
         <view class="count-group">
-          <button wx:for="{{[1,2,3]}}" wx:key="*this" class="count-btn {{registerCount === item ? 'active' : ''}}" data-count="{{item}}" bindtap="setRegisterCount">{{item}}</button>
+          <button wx:for="{{registerCounts}}" wx:key="*this" class="count-btn {{registerCount === item ? 'active' : ''}}" data-count="{{item}}" bindtap="setRegisterCount">{{item}}</button>
         </view>
-        <button class="primary-btn" bindtap="registerAccounts" loading="{{actionLoading === 'register'}}" disabled="{{!!actionLoading}}">开始注册</button>
+        <button class="primary-btn" bindtap="registerAccounts" loading="{{actionLoading === 'register'}}" disabled="{{actionLoading}}">开始注册</button>
       </view>
     </view>
 
@@ -34,7 +34,7 @@
         <text class="section-title">快速取号</text>
         <text class="section-desc">按号池顺序取最早可用账号，并自动复制账号密码</text>
       </view>
-      <button class="take-btn" bindtap="takeNext" loading="{{actionLoading === 'next'}}" disabled="{{!!actionLoading}}">取一个账号</button>
+      <button class="take-btn" bindtap="takeNext" loading="{{actionLoading === 'next'}}" disabled="{{actionLoading}}">取一个账号</button>
     </view>
 
     <view class="list-card">
