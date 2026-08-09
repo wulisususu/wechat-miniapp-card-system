@@ -20,6 +20,7 @@ Page({
     pageSize: 50,
     total: 0,
     hasMore: false,
+    registerCounts: [1, 2, 3],
     registerCount: 3,
     lastIssued: null as YuukiAccount | null
   },
@@ -117,7 +118,7 @@ Page({
       }
       const account = res.account as YuukiAccount;
       this.setData({ lastIssued: account });
-      await wx.setClipboardData({ data: `${account.username}\n${account.password}` });
+      wx.setClipboardData({ data: `${account.username}\n${account.password}` });
       wx.showModal({ title: '已取号并复制', content: `账号：${account.username}\n密码：${account.password}`, showCancel: false });
       await this.refreshAll(false);
     } catch (err) {
