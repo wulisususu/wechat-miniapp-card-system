@@ -10,76 +10,42 @@ const STATUS_OPTIONS = [
 Page({
   data: {
     loading: false,
+    advancedLoading: false,
     actionLoading: '',
-    stats: { total: 0, available: 0, issued: 0, discarded: 0 },
+    registerCounts: [1, 2, 3],
+    registerCount: 1,
+    createdAccounts: [] as YuukiAccount[],
+    quickLoginUsername: '',
+    keyword: '',
     items: [] as YuukiAccount[],
+    total: 0,
+    page: 1,
+    pageSize: 20,
+    hasMore: false,
+    listActivated: false,
+    listTitle: '搜索结果',
     statusOptions: STATUS_OPTIONS,
     status: 'all',
-    keyword: '',
-    page: 1,
-    pageSize: 50,
-    total: 0,
-    hasMore: false,
-    registerCounts: [1, 2, 3],
-    registerCount: 3,
+    showAdvanced: false,
+    statsLoaded: false,
+    stats: { total: 0, available: 0, issued: 0, discarded: 0 },
     lastIssued: null as YuukiAccount | null
   },
 
-  onLoad() {
-    this.refreshAll();
-  },
-
-  onShow() {
-    if (this.data.items.length) this.refreshAll(false);
-  },
-
   onPullDownRefresh() {
-    this.refreshAll(false).finally(() => wx.stopPullDownRefresh());
+    this.refreshVisible().finally(() => wx.stopPullDownRefresh());
   },
 
-  async refreshAll(showLoading = true) {
-    if (showLoading) this.setData({ loading: true });
+  async refreshVisible() {
+    const tasks: Promise<any>[] = [];
+    if (this.data.statsLoaded) tasks.push(this.loadStats());
+    if (this.data.listActivated) tasks.push(this.loadList(1));
+    if (!tasks.length) return;
     try {
-      await Promise.all([this.loadStats(), this.loadList(1)]);
+      await Promise.all(tasks);
     } catch (err) {
       this.showError(err);
-    } finally {
-      if (showLoading) this.setData({ loading: false });
     }
-  },
-
-  async loadStats() {
-    const res = await yuukiApi.stats();
-    const s = res.stats || res || {};
-    const available = Number(s.available || 0);
-    const issued = Number(s.issued || 0);
-    const discarded = Number(s.discarded || 0);
-    this.setData({ stats: { total: available + issued + discarded, available, issued, discarded } });
-  },
-
-  async loadList(page = 1) {
-    const res = await yuukiApi.list(this.data.status, this.data.keyword.trim(), page, this.data.pageSize);
-    const items = (res.items || []) as YuukiAccount[];
-    const total = Number(res.total || items.length);
-    this.setData({ items, total, page, hasMore: page * this.data.pageSize < total });
-  },
-
-  onKeywordInput(e: any) {
-    this.setData({ keyword: e.detail.value || '' });
-  },
-
-  onSearch() {
-    this.runListAction(() => this.loadList(1));
-  },
-
-  clearSearch() {
-    this.setData({ keyword: '' }, () => this.runListAction(() => this.loadList(1)));
-  },
-
-  changeStatus(e: any) {
-    const status = e.currentTarget.dataset.status as string;
-    if (!status || status === this.data.status) return;
-    this.setData({ status }, () => this.runListAction(() => this.loadList(1)));
   },
 
   setRegisterCount(e: any) {
@@ -94,17 +60,128 @@ Page({
       const res = await yuukiApi.register(this.data.registerCount);
       const registered = Number(res.registered || 0);
       const failed = Number(res.failed || 0);
+      const createdAccounts = (res.items || []) as YuukiAccount[];
+      this.setData({ createdAccounts });
+
       if (res.limited) {
-        wx.showModal({ title: '注册限速', content: `本次成功 ${registered} 个，请约 ${res.wait_seconds || 0} 秒后再试。`, showCancel: false });
+        wx.showModal({
+          title: '注册限速',
+          content: `本次成功 ${registered} 个，请约 ${res.wait_seconds || 0} 秒后再试。`,
+          showCancel: false
+        });
       } else {
-        wx.showToast({ title: `成功 ${registered} 个${failed ? `，失败 ${failed}` : ''}`, icon: registered ? 'success' : 'none' });
+        wx.showToast({
+          title: registered ? `已创建 ${registered} 个` : `创建失败${failed ? ` ${failed} 个` : ''}`,
+          icon: registered ? 'success' : 'none'
+        });
       }
-      await this.refreshAll(false);
+
+      if (this.data.statsLoaded) await this.loadStats();
     } catch (err) {
       this.showError(err);
     } finally {
       this.setData({ actionLoading: '' });
     }
+  },
+
+  onQuickLoginInput(e: any) {
+    this.setData({ quickLoginUsername: e.detail.value || '' });
+  },
+
+  quickAllowLogin(e: any) {
+    const username = this.data.quickLoginUsername.trim();
+    const typ = e.currentTarget.dataset.typ as 'all' | 'ip_add';
+    if (!username) {
+      wx.showToast({ title: '请输入账号', icon: 'none' });
+      return;
+    }
+    this.executeAllowLogin(username, typ);
+  },
+
+  onKeywordInput(e: any) {
+    this.setData({ keyword: e.detail.value || '' });
+  },
+
+  onSearch() {
+    const keyword = this.data.keyword.trim();
+    if (!keyword) {
+      wx.showToast({ title: '请输入要搜索的账号', icon: 'none' });
+      return;
+    }
+    this.setData({ status: 'all', listActivated: true, listTitle: '搜索结果' }, () => {
+      this.runListAction(() => this.loadList(1));
+    });
+  },
+
+  clearSearch() {
+    this.setData({
+      keyword: '',
+      items: [],
+      total: 0,
+      page: 1,
+      hasMore: false,
+      listActivated: false,
+      listTitle: '搜索结果',
+      status: 'all'
+    });
+  },
+
+  async loadList(page = 1, append = false) {
+    const res = await yuukiApi.list(this.data.status, this.data.keyword.trim(), page, this.data.pageSize);
+    const incoming = (res.items || []) as YuukiAccount[];
+    const items = append ? this.data.items.concat(incoming) : incoming;
+    const total = Number(res.total || items.length);
+    this.setData({
+      items,
+      total,
+      page,
+      hasMore: page * this.data.pageSize < total,
+      listActivated: true
+    });
+  },
+
+  loadMore() {
+    if (this.data.loading || !this.data.hasMore) return;
+    this.runListAction(() => this.loadList(this.data.page + 1, true));
+  },
+
+  toggleAdvanced() {
+    const showAdvanced = !this.data.showAdvanced;
+    this.setData({ showAdvanced });
+    if (showAdvanced && !this.data.statsLoaded) {
+      this.setData({ advancedLoading: true });
+      this.loadStats()
+        .catch((err) => this.showError(err))
+        .finally(() => this.setData({ advancedLoading: false }));
+    }
+  },
+
+  async loadStats() {
+    const res = await yuukiApi.stats();
+    const s = res.stats || res || {};
+    const available = Number(s.available || 0);
+    const issued = Number(s.issued || 0);
+    const discarded = Number(s.discarded || 0);
+    this.setData({
+      statsLoaded: true,
+      stats: {
+        total: available + issued + discarded,
+        available,
+        issued,
+        discarded
+      }
+    });
+  },
+
+  changeStatus(e: any) {
+    const status = String(e.currentTarget.dataset.status || 'all');
+    const option = STATUS_OPTIONS.find((item) => item.value === status);
+    this.setData({
+      status,
+      keyword: '',
+      listActivated: true,
+      listTitle: option ? `${option.label}账号` : '账号浏览'
+    }, () => this.runListAction(() => this.loadList(1)));
   },
 
   async takeNext() {
@@ -119,8 +196,12 @@ Page({
       const account = res.account as YuukiAccount;
       this.setData({ lastIssued: account });
       wx.setClipboardData({ data: `${account.username}\n${account.password}` });
-      wx.showModal({ title: '已取号并复制', content: `账号：${account.username}\n密码：${account.password}`, showCancel: false });
-      await this.refreshAll(false);
+      wx.showModal({
+        title: '已取号并复制',
+        content: `账号：${account.username}\n密码：${account.password}`,
+        showCancel: false
+      });
+      await this.refreshAfterAction();
     } catch (err) {
       this.showError(err);
     } finally {
@@ -132,6 +213,23 @@ Page({
     const username = String(e.currentTarget.dataset.username || '');
     const password = String(e.currentTarget.dataset.password || '');
     wx.setClipboardData({ data: `${username}\n${password}` });
+  },
+
+  allowLogin(e: any) {
+    const username = String(e.currentTarget.dataset.username || '');
+    const typ = e.currentTarget.dataset.typ as 'all' | 'ip_add';
+    this.executeAllowLogin(username, typ);
+  },
+
+  executeAllowLogin(username: string, typ: 'all' | 'ip_add') {
+    if (!username || this.data.actionLoading) return;
+    const successText = typ === 'all' ? '已允许登录' : '已允许服务器 IP';
+    this.accountAction(
+      `allow:${username}:${typ}`,
+      () => yuukiApi.allowLogin(username, typ),
+      successText,
+      true
+    );
   },
 
   releaseAccount(e: any) {
@@ -149,23 +247,10 @@ Page({
     const username = String(e.currentTarget.dataset.username || '');
     wx.showModal({
       title: '废弃账号',
-      content: `仅做废弃标记。确认废弃 ${username}？`,
+      content: `确认将 ${username} 标记为废弃？`,
       confirmColor: '#ef4444',
       success: (res) => {
         if (res.confirm) this.accountAction(`discard:${username}`, () => yuukiApi.discard(username), '已标记废弃');
-      }
-    });
-  },
-
-  allowLogin(e: any) {
-    const username = String(e.currentTarget.dataset.username || '');
-    const typ = e.currentTarget.dataset.typ as 'all' | 'ip_add';
-    const label = typ === 'all' ? '允许所有 IP' : '允许服务器当前 IP';
-    wx.showModal({
-      title: label,
-      content: `账号 ${username}\n登录令牌约 5 分钟有效。`,
-      success: (res) => {
-        if (res.confirm) this.accountAction(`allow:${username}:${typ}`, () => yuukiApi.allowLogin(username, typ), '允许登录成功', true);
       }
     });
   },
@@ -176,15 +261,29 @@ Page({
     try {
       const res = await action();
       if (res && res.ok === false) throw new Error(res.error || '操作失败');
-      const ipText = showIp && res && Array.isArray(res.iplock) && res.iplock.length ? `\nIP：${res.iplock.join(', ')}` : '';
-      if (ipText) wx.showModal({ title: successText, content: `${successText}${ipText}`, showCancel: false });
-      else wx.showToast({ title: successText, icon: 'success' });
-      await this.refreshAll(false);
+
+      const ipText = showIp && res && Array.isArray(res.iplock) && res.iplock.length
+        ? `\nIP：${res.iplock.join(', ')}`
+        : '';
+
+      if (ipText) {
+        wx.showModal({ title: successText, content: `${successText}${ipText}`, showCancel: false });
+      } else {
+        wx.showToast({ title: successText, icon: 'success' });
+      }
+      await this.refreshAfterAction();
     } catch (err) {
       this.showError(err);
     } finally {
       this.setData({ actionLoading: '' });
     }
+  },
+
+  async refreshAfterAction() {
+    const tasks: Promise<any>[] = [];
+    if (this.data.statsLoaded) tasks.push(this.loadStats());
+    if (this.data.listActivated) tasks.push(this.loadList(1));
+    if (tasks.length) await Promise.all(tasks);
   },
 
   async runListAction(action: () => Promise<void>) {
