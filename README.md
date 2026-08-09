@@ -1,117 +1,92 @@
-# 微信小程序卡密系统
+# 微信小程序管理端
 
-一个用于管理和操作卡密的微信小程序前端项目。本仓库只包含小程序前端代码，不包含服务端实现。
+用于测试服指令/卡密管理与 Yuuki 账号号池管理的微信小程序前端。
 
-> 注意：本仓库面向公开开源，所有与个人项目相关的敏感信息（如真实小程序 appid、真实后端域名）均已移除或使用占位符。请根据下方说明自行配置。
+> 本仓库保持公开可迁移：真实 AppID、生产后端域名、管理员凭证等不提交到仓库。服务端实现不包含在本仓库中。
 
-## 功能概览
+## 当前交互
 
-- 基于聊天界面的卡密管理与指令交互
-- 支持发送文本指令，例如：
-  - `删除 123456`
-  - `重置对话`
-- 支持本地消息历史记录保存与展示
+- 默认启动页仍为 `pages/chat/index`，打开小程序直接进入测试服聊天，不增加中间首页。
+- 左上角统一业务切换抽屉：`测试服` / `Yuuki 号池`。
+- 测试服聊天继续使用原有 `/api/wechat/message` 协议。
+- Yuuki 号池使用独立手机管理页，支持：库存统计、在线注册 1~3 个、FIFO 取号、搜索/筛选、复制账号密码、回池、废弃标记、允许所有 IP、允许服务器当前 IP。
+- 已废弃账号仅保留业务标记，前端不会继续显示 allowlogin 操作。
 
 ## 目录结构
 
-- `miniprogram/` 小程序源码目录
-  - `app.ts` 小程序入口
-  - `pages/chat/` 聊天页面
-- `project.config.json` 微信开发者工具项目配置
-
-## 环境要求
-
-- 微信开发者工具（建议使用最新版）
-- Node.js（如需使用 npm 相关功能，可选）
-
-## 使用步骤
-
-### 1. 克隆项目
-
-```bash
-git clone https://github.com/wulisususu/wechat-miniapp-card-system.git
-cd 微信小程序卡密系统
+```text
+miniprogram/
+├── app.ts
+├── app.json
+├── components/
+│   └── business-switcher/   # 左上角业务切换抽屉
+├── pages/
+│   ├── chat/                # 默认测试服聊天
+│   ├── yuuki/               # Yuuki 号池手机管理页
+│   ├── index/               # 历史模板页，当前非默认入口
+│   └── logs/
+└── services/
+    ├── request.ts            # 统一请求层/后端基地址
+    └── yuuki.ts              # Yuuki API 封装
 ```
 
-### 2. 配置小程序 appid
+## 配置
 
-本仓库中的 `project.config.json` 使用的是占位 appid：
+### AppID
 
-```json
-"appid": "wx0000000000000000"
-```
+`project.config.json` 中仍使用占位 AppID，请在本地微信开发者工具中替换为实际 AppID，不要把生产 AppID/Secret 当作服务端密钥使用。
 
-请根据以下步骤替换为你自己的小程序 appid：
+### 后端地址
 
-1. 在微信公众平台 / 微信开发者工具中创建/查看你的小程序。
-2. 复制你的小程序 `AppID`。
-3. 打开项目根目录下的 `project.config.json`，将 `appid` 字段替换为你自己的 AppID。
-
-> 建议：如果你将本仓库 fork 后继续开源，保持使用占位 appid，不要提交真实 appid 到公共仓库。
-
-### 3. 配置后端接口地址
-
-聊天页面会调用后端接口进行处理，请在 `miniprogram/pages/chat/index.ts` 中配置你的后端地址：
+统一修改：
 
 ```ts
-const BASE_URL = 'https://your-backend-domain.com'; // 后端基地址（占位示例）
-const API_PATH = '/api/wechat/message';
+// miniprogram/services/request.ts
+export const API_BASE_URL = 'https://your-backend-domain.com';
 ```
 
-请将 `https://your-backend-domain.com` 替换为你自己的后端服务地址，例如：
+测试服接口：
 
-```ts
-const BASE_URL = 'https://api.example.com';
+```text
+POST /api/wechat/message
 ```
 
-> 安全建议：不要在公开仓库中提交你真实的个人/生产服务器域名，可在本地维护一份私有配置文件，或在提交前将域名改为占位值。
+Yuuki 页面当前复用现有号池后端：
 
-后端接口需满足：
-
-- 请求方式：`POST`
-- 地址：`{BASE_URL}{API_PATH}`，例如 `https://api.example.com/api/wechat/message`
-- 请求体示例：
-
-```json
-{
-  "user_id": "miniuser-xxx",
-  "msg_type": "text",
-  "content": "删除 123456"
-}
+```text
+GET  /api/yuuki-pool/stats
+GET  /api/yuuki-pool/list
+POST /api/yuuki-pool/register
+GET  /api/yuuki-pool/next
+POST /api/yuuki-pool/release
+POST /api/yuuki-pool/discard
+POST /api/yuuki-pool/allowlogin
 ```
 
-- 返回体示例：
+正式微信小程序请求仍需要使用微信公众平台配置过的 HTTPS request 合法域名。公开仓库不保存真实生产域名或认证信息。
 
-```json
-{
-  "ok": true,
-  "reply": {
-    "content": "删除成功" 
-  }
-}
-```
+## 聊天流畅度改造
 
-## 在微信开发者工具中导入运行
+旧聊天页曾同时使用多组 `setTimeout`、DOM 高度查询、`scrollTop` 和 `scroll-into-view` 反复兜底，消息更新时容易出现多次布局和抖动。当前版本改为：
 
-1. 打开微信开发者工具，选择「导入项目」。
-2. 选择本项目根目录（包含 `project.config.json` 的目录）。
-3. 填写或确认小程序 `AppID`。
-4. 导入后即可在开发者工具中预览、调试小程序。
+- 每条消息稳定 ID；
+- 单一 `scroll-into-view` 锚点；
+- DOM 更新后通过 `wx.nextTick` 滚动；
+- 历史消息最多保留最近 100 条，降低长列表更新成本；
+- 减少一次消息发送过程中的重复 `setData` 和节点测量；
+- 抽屉动画只使用 `transform/opacity`，避免频繁布局；
+- 聊天视觉改为轻量气泡 + 浮层输入框，不引入额外重型 UI 依赖。
 
-## 自行二次开发建议
+实现思路参考微信小程序官方长列表/组件生态以及腾讯 TDesign MiniProgram 的组件分层方式，但未复制其业务逻辑，也未引入其完整组件库。
 
-- 如需添加更多页面，可在 `miniprogram/pages/` 下创建新页面目录，并在 `app.json` 中配置路由。
-- 如需扩展指令功能，可以在 `pages/chat/index.ts` 对发送/接收消息的逻辑进行扩展，或在后端处理更多指令。
+## 微信开发者工具运行
 
-## 安全与隐私提示
+1. `git pull` 获取最新代码。
+2. 用微信开发者工具打开仓库根目录（包含 `project.config.json`）。
+3. 确认本地实际 AppID 与 `services/request.ts` 的生产 API 地址。
+4. 开发阶段可在开发者工具中调试；真机/体验版必须配置合法 HTTPS request 域名。
+5. 默认进入测试服聊天，点击左上角按钮切换到 Yuuki 号池。
 
-- 请不要在公开仓库中提交：
-  - 真实小程序 `appsecret`
-  - 数据库账号密码
-  - 第三方服务密钥（如支付、短信、对象存储等）
-  - 访问日志、包含用户敏感信息的文件
-- 推荐将这些敏感信息保存在服务端或环境变量中，而不是前端仓库。
+## 安全提示
 
-## License
-
-请根据你的需要补充许可证说明，例如：MIT、Apache-2.0 或保留所有权利。
+不要在小程序前端提交数据库密码、管理员 Basic Auth 密码、第三方 Secret 或其他服务端密钥；这些信息都可能从客户端包中被读取。
