@@ -1,121 +1,55 @@
 <view class="page">
-  <scroll-view 
-    class="messages-container" 
-    scroll-y 
-    scroll-with-animation="{{false}}"
-    scroll-top="{{scrollTop}}"
+  <business-switcher current="test-server" title="测试服" />
+
+  <scroll-view
+    class="messages-container"
+    scroll-y
+    enhanced
+    show-scrollbar="{{false}}"
+    scroll-with-animation="{{animateScroll}}"
     scroll-into-view="{{scrollIntoView}}"
     enable-back-to-top
-    bindscroll="onScroll"
   >
-    <view class="messages-wrapper">
-      <block wx:for="{{messages}}" wx:key="index">
-        <view class="message-row {{item.role}}" id="msg-{{index}}">
-          <!-- Bot消息：显示头像和用户名 -->
-          <block wx:if="{{item.role === 'bot'}}">
-            <view class="message-avatar bot-avatar">
-              <text class="avatar-text">助</text>
-            </view>
-            <view class="message-content-wrapper">
-              <view class="message-header">
-                <text class="message-username">助手</text>
-                <text class="message-time">{{item.timeText}}</text>
-              </view>
-              <view class="message-bubble bot">
-                <text class="message-text">{{item.content}}</text>
-              </view>
-            </view>
-          </block>
-          
-          <!-- 用户消息：只显示气泡和时间 -->
-          <block wx:else>
-            <view class="message-content-wrapper user-wrapper">
-              <view class="message-bubble user">
-                <text class="message-text">{{item.content}}</text>
-              </view>
-              <text class="message-time user-time">{{item.timeText}}</text>
-            </view>
-          </block>
-        </view>
-      </block>
-      
-      <!-- 加载指示器 -->
-      <view wx:if="{{loading}}" class="message-row bot">
-        <view class="message-avatar bot-avatar">
-          <text class="avatar-text">助</text>
-        </view>
-        <view class="message-content-wrapper">
-          <view class="message-header">
-            <text class="message-username">助手</text>
+    <view class="messages-list">
+      <view wx:for="{{messages}}" wx:key="id" id="{{item.id}}" class="message-row {{item.role}}">
+        <view class="message-stack {{item.role}}">
+          <view class="message-bubble {{item.role}}">
+            <text class="message-text">{{item.content}}</text>
           </view>
-          <view class="message-bubble bot loading">
-            <view class="typing-indicator">
-              <view class="dot"></view>
-              <view class="dot"></view>
-              <view class="dot"></view>
-            </view>
+          <text class="message-time">{{item.timeText}}</text>
+        </view>
+      </view>
+
+      <view wx:if="{{loading}}" class="message-row bot" id="typing-indicator">
+        <view class="message-stack bot">
+          <view class="message-bubble bot typing-bubble">
+            <view class="typing-dot"></view>
+            <view class="typing-dot"></view>
+            <view class="typing-dot"></view>
           </view>
         </view>
       </view>
+      <view class="bottom-anchor"></view>
     </view>
   </scroll-view>
-  
-  <!-- 输入栏 -->
-  <view class="input-container">
-    <view class="input-bar">
-      <!-- 语音输入按钮 -->
-      <view class="input-action-btn voice-btn" wx:if="{{showActionButtons}}">
-        <view class="voice-icon">
-          <view class="voice-circle"></view>
-          <view class="voice-waves">
-            <view class="wave"></view>
-            <view class="wave"></view>
-            <view class="wave"></view>
-          </view>
-        </view>
-      </view>
-      
-      <!-- 输入框 -->
-      <view class="input-wrapper">
-        <input
-          class="input-field"
-          placeholder="输入消息..."
-          value="{{text}}"
-          focus="{{inputFocus}}"
-          confirm-type="send"
-          bindconfirm="onSend"
-          bindinput="onInput"
-          bindfocus="onInputFocus"
-          bindblur="onInputBlur"
-          adjust-position="{{true}}"
-        />
-      </view>
-      
-      <!-- 右侧功能按钮 -->
-      <view class="input-actions">
-        <!-- 表情按钮 -->
-        <view class="input-action-btn emoji-btn" wx:if="{{showActionButtons}}">
-          <view class="emoji-icon">
-            <view class="emoji-face">
-              <view class="eye left"></view>
-              <view class="eye right"></view>
-              <view class="mouth"></view>
-            </view>
-          </view>
-        </view>
-        
-        <!-- 发送按钮 -->
-        <button 
-          wx:if="{{!showActionButtons}}"
-          class="send-btn" 
-          disabled="{{loading}}"
-          bindtap="onSend"
-        >
-          <text wx:if="{{!loading}}" class="send-text">发送</text>
-          <view wx:else class="loading-spinner-small"></view>
-        </button>
-      </view>
+
+  <view class="composer-wrap">
+    <view class="composer">
+      <input
+        class="composer-input"
+        value="{{text}}"
+        focus="{{inputFocus}}"
+        placeholder="输入指令或消息…"
+        confirm-type="send"
+        bindinput="onInput"
+        bindconfirm="onSend"
+        bindfocus="onInputFocus"
+        bindblur="onInputBlur"
+        adjust-position
+      />
+      <button class="send-btn {{text ? 'active' : ''}}" bindtap="onSend" disabled="{{loading || !text}}">
+        <text>{{loading ? '···' : '发送'}}</text>
+      </button>
     </view>
   </view>
 </view>
-
