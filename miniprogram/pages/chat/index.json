@@ -1,6 +1,8 @@
 {
-  "navigationBarTitleText": "聊天频道",
-  "navigationStyle": "default",
-  "enablePullDownRefresh": false
+  "navigationStyle": "custom",
+  "enablePullDownRefresh": false,
+  "backgroundColor": "#f5f6f8",
+  "usingComponents": {
+    "business-switcher": "/components/business-switcher/index"
+  }
 }
-
