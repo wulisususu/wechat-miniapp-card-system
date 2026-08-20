@@ -26,7 +26,10 @@ miniprogram/
 │   ├── index/               # 历史模板页，当前非默认入口
 │   └── logs/
 └── services/
-    ├── request.ts            # 统一请求层/后端基地址
+    ├── request.ts            # 统一请求层（读取配置并附加 Basic Auth）
+    ├── config.ts             # 配置默认值（占位符，可提交）
+    ├── config.local.ts       # 本地配置（真实地址/凭证，已 gitignore，不入库）
+    ├── config.local.example.ts # 本地配置模板
     └── yuuki.ts              # Yuuki API 封装
 ```
 
@@ -36,14 +39,24 @@ miniprogram/
 
 `project.config.json` 中仍使用占位 AppID，请在本地微信开发者工具中替换为实际 AppID，不要把生产 AppID/Secret 当作服务端密钥使用。
 
-### 后端地址
+### 后端地址与认证
 
-统一修改：
+后端基地址和 Basic Auth 凭证统一从 `services/config.local.ts` 读取（该文件已 `.gitignore`，不会进入公开仓库）。默认回退到 `services/config.ts` 中的占位符。
+
+本地调试步骤：
+
+1. 复制模板 `miniprogram/services/config.local.example.ts` 为 `miniprogram/services/config.local.ts`；
+2. 填入真实值：
 
 ```ts
-// miniprogram/services/request.ts
-export const API_BASE_URL = 'https://your-backend-domain.com';
+// miniprogram/services/config.local.ts（不入库）
+export const apiBaseUrl = 'http://124.223.176.99';   // 开发期可用 IP
+export const username = 'your-basic-auth-username';  // 号池 Basic Auth 账号
+export const password = 'your-basic-auth-password';  // 号池 Basic Auth 密码
 ```
+
+- 开发者工具模拟器使用 `http://IP` 时，需要在工具「详情 → 本地设置」关闭"校验合法域名"；
+- 正式上线必须使用已备案的 HTTPS 域名，并在微信公众平台「开发管理 → 服务器域名」配置为 request 合法域名。
 
 测试服接口：
 
@@ -57,13 +70,24 @@ Yuuki 页面当前复用现有号池后端：
 GET  /api/yuuki-pool/stats
 GET  /api/yuuki-pool/list
 POST /api/yuuki-pool/register
+GET  /api/yuuki-pool/register/status
 GET  /api/yuuki-pool/next
 POST /api/yuuki-pool/release
 POST /api/yuuki-pool/discard
 POST /api/yuuki-pool/allowlogin
+
+发放（grant）系列：
+
+POST /api/yuuki-pool/grant/verify
+POST /api/yuuki-pool/grant/probe
+POST /api/yuuki-pool/grant/player-candidates
+POST /api/yuuki-pool/grant/avatars
+POST /api/yuuki-pool/grant/lightcones
+GET  /api/yuuki-pool/grant/status?username=xxx
+POST /api/yuuki-pool/grant/setinfo
 ```
 
-正式微信小程序请求仍需要使用微信公众平台配置过的 HTTPS request 合法域名。公开仓库不保存真实生产域名或认证信息。
+> 号池接口受 nginx Basic Auth 保护（`401 realm="Card Backend"`），`request.ts` 会自动附加 `Authorization: Basic ...`。公开仓库不保存真实生产域名或认证信息。
 
 ## 聊天流畅度改造
 

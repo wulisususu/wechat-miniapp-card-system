@@ -1,19 +1,22 @@
 <view class="page">
   <business-switcher current="yuuki" title="Yuuki 号池" />
 
-  <scroll-view class="content" scroll-y enhanced show-scrollbar="{{false}}">
+  <scroll-view class="content" scroll-y enhanced show-scrollbar="{{false}}" scroll-into-view="{{scrollIntoViewId}}">
     <view class="section-card primary-section">
       <view class="section-head">
         <view>
           <text class="section-title">创建账号</text>
-          <text class="section-desc">常用 1 - 2 个，也可一次创建 3 个</text>
+          <text class="section-desc">支持批量创建，上限为当前可用代理 IP 数，创建后自动写入号池</text>
         </view>
       </view>
 
       <view class="create-row">
-        <view class="count-switch">
-          <button wx:for="{{registerCounts}}" wx:key="*this" class="count-btn {{registerCount === item ? 'active' : ''}}" data-count="{{item}}" bindtap="setRegisterCount">{{item}}</button>
-        </view>
+        <picker class="count-picker" mode="selector" range="{{registerCountOptions}}" value="{{registerCountIndex}}" bindchange="setRegisterCount">
+          <view class="count-picker-box">
+            <text class="count-picker-label">创建 {{registerCount}} 个</text>
+            <text class="count-picker-arrow">⌄</text>
+          </view>
+        </picker>
         <button class="main-btn create-btn" bindtap="registerAccounts" loading="{{actionLoading === 'register'}}" disabled="{{actionLoading}}">创建</button>
       </view>
 
@@ -22,11 +25,9 @@
         <view wx:for="{{createdAccounts}}" wx:key="username" class="created-row">
           <view class="created-account">
             <text class="mono strong">{{item.username}}</text>
-            <text class="mono muted">{{item.password}}</text>
           </view>
           <view class="created-actions">
-            <button class="text-btn" data-username="{{item.username}}" data-password="{{item.password}}" bindtap="copyAccount">复制</button>
-            <button class="text-btn accent" data-username="{{item.username}}" data-typ="all" bindtap="allowLogin">允许登录</button>
+            <button class="text-btn" data-id="{{item.id}}" data-username="{{item.username}}" data-password="{{item.password}}" bindtap="openAccountAction">操作</button>
           </view>
         </view>
       </view>
@@ -60,7 +61,7 @@
       <view class="section-head">
         <view>
           <text class="section-title">搜索账号</text>
-          <text class="section-desc">查到后可复制、登录、回池或废弃</text>
+          <text class="section-desc">输入账号或备注搜索，点击结果可操作</text>
         </view>
       </view>
       <view class="search-row">
@@ -73,43 +74,34 @@
       </view>
     </view>
 
-    <view class="more-card">
-      <view class="more-toggle" bindtap="toggleAdvanced">
-        <view>
-          <text class="more-title">更多工具</text>
-          <text class="more-subtitle">库存、取号与状态浏览</text>
-        </view>
-        <text class="chevron {{showAdvanced ? 'open' : ''}}">⌄</text>
+    <view class="results-card recent-card">
+      <view class="results-head">
+        <text class="results-title">最近账号</text>
+        <text class="results-count">最近 {{recentAccounts.length}} 条</text>
       </view>
 
-      <view wx:if="{{showAdvanced}}" class="advanced-body">
-        <view class="stats-row">
-          <view class="stat"><text class="stat-n">{{stats.total}}</text><text class="stat-l">总数</text></view>
-          <view class="stat"><text class="stat-n available">{{stats.available}}</text><text class="stat-l">可用</text></view>
-          <view class="stat"><text class="stat-n issued">{{stats.issued}}</text><text class="stat-l">已发出</text></view>
-          <view class="stat"><text class="stat-n discarded">{{stats.discarded}}</text><text class="stat-l">已废弃</text></view>
-        </view>
+      <view wx:if="{{!recentAccounts.length}}" class="empty-state">
+        <text class="empty-title">还没有账号</text>
+        <text class="empty-desc">先在上方创建账号，再回来查看。</text>
+      </view>
 
-        <button class="take-btn" bindtap="takeNext" loading="{{actionLoading === 'next'}}" disabled="{{actionLoading}}">取一个可用账号并复制</button>
-
-        <view class="browse-block">
-          <text class="browse-title">按状态浏览</text>
-          <scroll-view class="filter-scroll" scroll-x show-scrollbar="{{false}}">
-            <view class="filter-row">
-              <button wx:for="{{statusOptions}}" wx:key="value" class="filter-chip {{status === item.value && listActivated && !keyword ? 'active' : ''}}" data-status="{{item.value}}" bindtap="changeStatus">{{item.label}}</button>
-            </view>
-          </scroll-view>
+      <view wx:for="{{recentAccounts}}" wx:key="id" class="account-row" data-id="{{item.id}}" data-username="{{item.username}}" data-password="{{item.password}}" data-status="{{item.status}}" data-remark="{{item.remark}}" data-verify-status="{{item.verify_status}}" data-grant-status="{{item.grant_status}}" data-uid="{{item.uid}}" data-server="{{item.server}}" bindtap="openAccountAction">
+        <view class="account-head">
+          <view class="account-id">
+            <text class="mono strong username">{{item.username}}</text>
+          </view>
+          <text class="status status-{{item.status}}">{{item.status === 'available' ? '可用' : item.status === 'issued' ? '已发出' : '已废弃'}}</text>
         </view>
-
-        <view wx:if="{{lastIssued}}" class="last-issued">
-          <text class="last-label">最近取号</text>
-          <text class="mono strong">{{lastIssued.username}}</text>
-          <button class="text-btn" data-username="{{lastIssued.username}}" data-password="{{lastIssued.password}}" bindtap="copyAccount">复制</button>
+        <view class="account-meta" wx:if="{{item.verify_status !== undefined || item.grant_status !== undefined || item.uid || item.server}}">
+          <text wx:if="{{item.verify_status !== undefined}}" class="meta-badge meta-verify-{{item.verify_status}}">{{item.verify_status === 1 ? '已验证' : item.verify_status === 2 ? '验证失败' : '未验证'}}</text>
+          <text wx:if="{{item.grant_status !== undefined}}" class="meta-badge meta-grant-{{item.grant_status}}">{{item.grant_status === 2 ? '已发放' : item.grant_status === 3 ? '发放失败' : item.grant_status === 1 ? '发放中' : '未发放'}}</text>
+          <text wx:if="{{item.uid || item.server}}" class="meta-badge meta-server mono">{{item.uid}}{{item.uid && item.server ? ' · ' : ''}}{{item.server}}</text>
         </view>
+        <text wx:if="{{item.remark}}" class="remark">{{item.remark}}</text>
       </view>
     </view>
 
-    <view wx:if="{{listActivated}}" class="results-card">
+    <view wx:if="{{listActivated}}" class="results-card" id="search-results">
       <view class="results-head">
         <text class="results-title">{{listTitle}}</text>
         <text class="results-count">{{total}} 条</text>
@@ -120,26 +112,26 @@
         <text class="empty-desc">检查账号或搜索条件后再试。</text>
       </view>
 
-      <view wx:for="{{items}}" wx:key="id" class="account-row">
+      <view wx:for="{{items}}" wx:key="id" class="account-row" data-id="{{item.id}}" data-username="{{item.username}}" data-password="{{item.password}}" data-status="{{item.status}}" data-remark="{{item.remark}}" data-verify-status="{{item.verify_status}}" data-grant-status="{{item.grant_status}}" data-uid="{{item.uid}}" data-server="{{item.server}}" bindtap="openAccountAction">
         <view class="account-head">
           <view class="account-id">
             <text class="mono strong username">{{item.username}}</text>
-            <text class="mono muted password">{{item.password}}</text>
           </view>
           <text class="status status-{{item.status}}">{{item.status === 'available' ? '可用' : item.status === 'issued' ? '已发出' : '已废弃'}}</text>
         </view>
-
+        <view class="account-meta" wx:if="{{item.verify_status !== undefined || item.grant_status !== undefined || item.uid || item.server}}">
+          <text wx:if="{{item.verify_status !== undefined}}" class="meta-badge meta-verify-{{item.verify_status}}">{{item.verify_status === 1 ? '已验证' : item.verify_status === 2 ? '验证失败' : '未验证'}}</text>
+          <text wx:if="{{item.grant_status !== undefined}}" class="meta-badge meta-grant-{{item.grant_status}}">{{item.grant_status === 2 ? '已发放' : item.grant_status === 3 ? '发放失败' : item.grant_status === 1 ? '发放中' : '未发放'}}</text>
+          <text wx:if="{{item.uid || item.server}}" class="meta-badge meta-server mono">{{item.uid}}{{item.uid && item.server ? ' · ' : ''}}{{item.server}}</text>
+        </view>
         <text wx:if="{{item.remark}}" class="remark">{{item.remark}}</text>
-
-        <view class="account-actions">
-          <button class="mini-btn" data-username="{{item.username}}" data-password="{{item.password}}" bindtap="copyAccount">复制</button>
-          <block wx:if="{{item.status !== 'discarded'}}">
-            <button class="mini-btn primary" data-username="{{item.username}}" data-typ="all" bindtap="allowLogin">允许登录</button>
-            <button class="mini-btn subtle" data-username="{{item.username}}" data-typ="ip_add" bindtap="allowLogin">服务器 IP</button>
-            <button wx:if="{{item.status === 'issued'}}" class="mini-btn subtle" data-username="{{item.username}}" bindtap="releaseAccount">回池</button>
-            <button class="mini-btn danger" data-username="{{item.username}}" bindtap="discardAccount">废弃</button>
-          </block>
-          <text wx:else class="discard-note">已废弃，仅保留标记</text>
+        <view class="row-actions" catchtap="onPreventBubble">
+          <button class="row-btn" data-username="{{item.username}}" data-password="{{item.password}}" catchtap="copyFromRow" disabled="{{actionLoading}}">复制</button>
+          <button class="row-btn" data-username="{{item.username}}" data-password="{{item.password}}" catchtap="allowLoginFromRow" disabled="{{actionLoading}}">允许登录</button>
+          <button class="row-btn" data-username="{{item.username}}" data-password="{{item.password}}" data-status="{{item.status}}" data-remark="{{item.remark}}" data-verify-status="{{item.verify_status}}" data-grant-status="{{item.grant_status}}" data-uid="{{item.uid}}" data-server="{{item.server}}" catchtap="specifyIpFromRow" disabled="{{actionLoading}}">指定IP</button>
+          <button class="row-btn" data-username="{{item.username}}" data-password="{{item.password}}" data-status="{{item.status}}" data-remark="{{item.remark}}" data-verify-status="{{item.verify_status}}" data-grant-status="{{item.grant_status}}" data-uid="{{item.uid}}" data-server="{{item.server}}" catchtap="verifyFromRow" disabled="{{actionLoading}}">邮箱验证</button>
+          <button class="row-btn" data-username="{{item.username}}" data-password="{{item.password}}" data-status="{{item.status}}" data-remark="{{item.remark}}" data-verify-status="{{item.verify_status}}" data-grant-status="{{item.grant_status}}" data-uid="{{item.uid}}" data-server="{{item.server}}" catchtap="detectUidFromRow" disabled="{{actionLoading}}">检测UID</button>
+          <button class="row-btn" data-username="{{item.username}}" data-password="{{item.password}}" data-status="{{item.status}}" data-remark="{{item.remark}}" data-verify-status="{{item.verify_status}}" data-grant-status="{{item.grant_status}}" data-uid="{{item.uid}}" data-server="{{item.server}}" catchtap="issueFromRow" disabled="{{actionLoading}}">标记发出</button>
         </view>
       </view>
 
@@ -148,4 +140,121 @@
 
     <view class="safe-space"></view>
   </scroll-view>
+
+  <!-- 账号操作弹窗 -->
+  <view wx:if="{{showActionPopup}}" class="action-popup" bindtap="closeActionPopup">
+    <view class="action-popup-content" catchtap="onPreventBubble">
+      <view class="action-popup-title">账号操作</view>
+      <view class="action-account">
+        <text class="mono strong">{{actionAccount.username}}</text>
+        <text class="status status-{{actionAccount.status}}">{{actionAccount.status === 'available' ? '可用' : actionAccount.status === 'issued' ? '已发出' : '已废弃'}}</text>
+      </view>
+
+      <view class="grant-status" wx:if="{{actionAccount.verify_status !== undefined || actionAccount.grant_status !== undefined || actionAccount.uid || actionAccount.server}}">
+        <text class="gs-item">验证 {{actionAccount.verify_status === 1 ? '✓ 已验证' : actionAccount.verify_status === 2 ? '✗ 失败' : '○ 未验证'}}</text>
+        <text class="gs-item">发放 {{actionAccount.grant_status === 2 ? '✓ 完成' : actionAccount.grant_status === 3 ? '✗ 失败' : actionAccount.grant_status === 1 ? '… 发放中' : '○ 未发放'}}</text>
+        <text wx:if="{{actionAccount.uid || actionAccount.server}}" class="gs-item mono">UID {{actionAccount.uid || '-'}} / {{actionAccount.server || '-'}}</text>
+      </view>
+
+      <view class="action-buttons">
+        <button class="action-btn copy" bindtap="copyFromPopup" disabled="{{actionLoading}}">复制</button>
+        <block wx:if="{{actionAccount.status !== 'discarded'}}">
+          <button class="action-btn allow" bindtap="allowLoginFromPopup" disabled="{{actionLoading}}">允许登录</button>
+          <button class="action-btn ip" bindtap="specifyIpFromPopup" disabled="{{actionLoading}}">指定IP</button>
+        </block>
+      </view>
+
+      <view class="action-buttons grant-buttons">
+        <block wx:if="{{actionAccount.status !== 'discarded'}}">
+          <button class="action-btn verify" bindtap="verifyFromPopup" loading="{{actionLoading === 'verify'}}" disabled="{{actionLoading}}">邮箱验证</button>
+          <button class="action-btn detect" bindtap="detectUidFromPopup" loading="{{actionLoading === 'detect-uid'}}" disabled="{{actionLoading}}">检测UID</button>
+          <button class="action-btn issue" bindtap="issueFromPopup" disabled="{{actionLoading}}">标记发出</button>
+        </block>
+      </view>
+
+      <view class="action-buttons grant-buttons">
+        <block wx:if="{{actionAccount.status !== 'discarded'}}">
+          <button class="action-btn grant" bindtap="grantAvatarsFromPopup" loading="{{actionLoading === 'grant' && grantKind === 'avatars'}}" disabled="{{actionLoading}}">发放全部角色</button>
+          <button class="action-btn grant" bindtap="grantLightconesFromPopup" loading="{{actionLoading === 'grant' && grantKind === 'lightcones'}}" disabled="{{actionLoading}}">发放全部光锥</button>
+          <button class="action-btn discard" bindtap="discardFromPopup" disabled="{{actionLoading}}">废弃</button>
+        </block>
+      </view>
+
+      <button class="action-btn cancel popup-cancel" bindtap="closeActionPopup">取消</button>
+    </view>
+  </view>
+
+  <!-- UID/服务器 选择弹窗 -->
+  <view wx:if="{{showUidPicker}}" class="action-popup uid-picker-popup" bindtap="closeUidPicker">
+    <view class="action-popup-content" catchtap="onPreventBubble">
+      <view class="action-popup-title">{{showUidManual ? '手动输入 UID/服务器' : '选择 UID/服务器'}}</view>
+      <view class="action-account">
+        <text class="mono strong">{{actionAccount.username}}</text>
+      </view>
+
+      <block wx:if="{{!showUidManual}}">
+        <view class="uid-picker-shell">
+          <picker class="uid-picker" mode="selector" range="{{candidateLabels}}" value="{{candidateIndex}}" bindchange="onCandidateChange">
+            <view class="uid-picker-box">
+              <text class="uid-picker-label">{{candidateLabels[candidateIndex] || '请选择'}}</text>
+              <text class="count-picker-arrow">⌄</text>
+            </view>
+          </picker>
+        </view>
+        <text class="ip-hint">检测到 {{candidates.length}} 个 UID/服务器，请选择崩铁服（lc 后缀）</text>
+        <view class="action-buttons ip-input-buttons">
+          <button class="action-btn cancel" bindtap="closeUidPicker">取消</button>
+          <button class="action-btn ip" bindtap="confirmCandidate">确定</button>
+        </view>
+        <view class="manual-link" bindtap="switchUidManual">没有找到？手动输入 UID/服务器</view>
+      </block>
+
+      <block wx:else>
+        <view class="uid-manual-inputs">
+          <view class="input-shell">
+            <input value="{{uidInput}}" bindinput="onUidInput" type="text" maxlength="32" placeholder="UID" />
+          </view>
+          <view class="input-shell">
+            <input value="{{serverInput}}" bindinput="onServerInput" type="text" maxlength="64" placeholder="服务器（如 eu2-lc1 / jp1-lc1）" />
+          </view>
+        </view>
+        <view class="action-buttons ip-input-buttons">
+          <button class="action-btn cancel" bindtap="closeUidPicker">取消</button>
+          <button class="action-btn ip" bindtap="confirmUidManual">确定</button>
+        </view>
+      </block>
+    </view>
+  </view>
+
+  <!-- 指定IP输入弹窗 -->
+  <view wx:if="{{showIpInput}}" class="action-popup ip-input-popup" bindtap="closeIpInput">
+    <view class="action-popup-content" catchtap="onPreventBubble">
+      <view class="action-popup-title">指定IP</view>
+      <view class="action-account">
+        <text class="mono strong">{{actionAccount.username}}</text>
+      </view>
+
+      <view class="ip-segments">
+        <block wx:for="{{ipSegments}}" wx:key="*this">
+          <input
+            class="ip-seg"
+            type="number"
+            maxlength="3"
+            data-index="{{index}}"
+            value="{{item}}"
+            focus="{{ipFocusIndex === index}}"
+            bindinput="onIpSegmentInput"
+            bindtap="onIpSegmentTap"
+          />
+          <text wx:if="{{index < 3}}" class="ip-dot">.</text>
+        </block>
+      </view>
+      <text class="ip-hint">每段 1~255，输满 3 位自动跳到下一段</text>
+
+      <view class="action-buttons ip-input-buttons">
+        <button class="action-btn cancel" bindtap="closeIpInput">取消</button>
+        <button class="action-btn ip" bindtap="confirmIpInput">确定</button>
+      </view>
+    </view>
+  </view>
 </view>

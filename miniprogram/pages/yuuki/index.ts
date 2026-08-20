@@ -1,18 +1,13 @@
-import { yuukiApi, YuukiAccount } from '../../services/yuuki';
+import { yuukiApi, YuukiAccount, GrantCandidate } from '../../services/yuuki';
 
-const STATUS_OPTIONS = [
-  { value: 'all', label: '全部' },
-  { value: 'available', label: '可用' },
-  { value: 'issued', label: '已发出' },
-  { value: 'discarded', label: '已废弃' }
-];
+const RECENT_COUNT = 10;
 
 Page({
   data: {
     loading: false,
-    advancedLoading: false,
     actionLoading: '',
-    registerCounts: [1, 2, 3],
+    registerCountOptions: ['1', '2', '3', '5', '10', '20'],
+    registerCountIndex: 0,
     registerCount: 1,
     createdAccounts: [] as YuukiAccount[],
     quickLoginUsername: '',
@@ -24,12 +19,33 @@ Page({
     hasMore: false,
     listActivated: false,
     listTitle: '搜索结果',
-    statusOptions: STATUS_OPTIONS,
-    status: 'all',
-    showAdvanced: false,
-    statsLoaded: false,
-    stats: { total: 0, available: 0, issued: 0, discarded: 0 },
-    lastIssued: null as YuukiAccount | null
+    recentAccounts: [] as YuukiAccount[],
+    showActionPopup: false,
+    actionAccount: null as YuukiAccount | null,
+    showIpInput: false,
+    ipSegments: ['', '', '', ''] as string[],
+    ipFocusIndex: 0,
+    // UID/服务器 选择与手动输入
+    showUidPicker: false,
+    showUidManual: false,
+    candidates: [] as GrantCandidate[],
+    candidateLabels: [] as string[],
+    candidateIndex: 0,
+    uidInput: '',
+    serverInput: '',
+    // 发放中标记（avatars | lightcones），用于按钮 loading 态与禁止重复点击
+    grantKind: '' as '' | 'avatars' | 'lightcones',
+    // 搜索结果自动滚动定位
+    scrollIntoViewId: ''
+  },
+
+  onLoad() {
+    this.loadRecent();
+  },
+
+  onUnload() {
+    // 页面关闭后停止轮询（后台注册/发放任务不受影响，完成后直接写入号池）
+    (this as any)._pageClosed = true;
   },
 
   onPullDownRefresh() {
@@ -37,10 +53,8 @@ Page({
   },
 
   async refreshVisible() {
-    const tasks: Promise<any>[] = [];
-    if (this.data.statsLoaded) tasks.push(this.loadStats());
+    const tasks: Promise<any>[] = [this.loadRecent()];
     if (this.data.listActivated) tasks.push(this.loadList(1));
-    if (!tasks.length) return;
     try {
       await Promise.all(tasks);
     } catch (err) {
@@ -48,36 +62,73 @@ Page({
     }
   },
 
+  async loadRecent() {
+    try {
+      const res = await yuukiApi.list('all', '', 1, RECENT_COUNT);
+      const items = (res.items || []) as YuukiAccount[];
+      this.setData({ recentAccounts: items.slice(0, RECENT_COUNT) });
+    } catch (err) {
+      this.showError(err);
+    }
+  },
+
   setRegisterCount(e: any) {
-    const count = Number(e.currentTarget.dataset.count || 1);
-    this.setData({ registerCount: Math.min(3, Math.max(1, count)) });
+    const index = Number(e.detail.value);
+    const options = this.data.registerCountOptions;
+    const count = options[index] ? Number(options[index]) : 1;
+    this.setData({ registerCount: Math.max(1, count), registerCountIndex: index });
   },
 
   async registerAccounts() {
     if (this.data.actionLoading) return;
-    this.setData({ actionLoading: 'register' });
+    (this as any)._pageClosed = false;
+    this.setData({ actionLoading: 'register', createdAccounts: [] });
+    const hideLoading = () => {
+      try { wx.hideLoading(); } catch { /* 页面已卸载等场景忽略 */ }
+    };
+    wx.showLoading({ title: '正在启动注册…', mask: true });
     try {
-      const res = await yuukiApi.register(this.data.registerCount);
-      const registered = Number(res.registered || 0);
-      const failed = Number(res.failed || 0);
-      const createdAccounts = (res.items || []) as YuukiAccount[];
+      // 启动注册后不再等同步结果：轮询 GET /register/status，账号列表在 task.items 里
+      const task = await yuukiApi.register(this.data.registerCount, {
+        onProgress: (t) => {
+          if (t.status === 'running') {
+            wx.showLoading({ title: `注册中 ${t.registered}/${t.requested}…`, mask: true });
+          }
+        },
+        shouldAbort: () => (this as any)._pageClosed === true
+      });
+      if ((this as any)._pageClosed) return;
+      hideLoading();
+
+      if (task.status === 'error') {
+        wx.showModal({ title: '注册失败', content: task.message || '注册失败，请稍后重试', showCancel: false });
+        return;
+      }
+
+      const registered = Number(task.registered || 0);
+      const failed = Number(task.failed || 0);
+      const createdAccounts = (task.items || []).map((it) => ({
+        id: 0,
+        username: it.username,
+        password: it.password,
+        status: 'available' as const
+      }));
       this.setData({ createdAccounts });
 
-      if (res.limited) {
-        wx.showModal({
-          title: '注册限速',
-          content: `本次成功 ${registered} 个，请约 ${res.wait_seconds || 0} 秒后再试。`,
-          showCancel: false
-        });
+      if (registered > 0 && failed === 0) {
+        wx.showToast({ title: `已创建 ${registered} 个`, icon: 'success' });
       } else {
-        wx.showToast({
-          title: registered ? `已创建 ${registered} 个` : `创建失败${failed ? ` ${failed} 个` : ''}`,
-          icon: registered ? 'success' : 'none'
+        wx.showModal({
+          title: '注册完成',
+          content: task.message || `成功 ${registered} 个，失败 ${failed} 个`,
+          showCancel: false
         });
       }
 
-      if (this.data.statsLoaded) await this.loadStats();
+      await this.loadRecent();
     } catch (err) {
+      if ((this as any)._pageClosed) return;
+      hideLoading();
       this.showError(err);
     } finally {
       this.setData({ actionLoading: '' });
@@ -102,15 +153,16 @@ Page({
     this.setData({ keyword: e.detail.value || '' });
   },
 
-  onSearch() {
+  async onSearch() {
     const keyword = this.data.keyword.trim();
     if (!keyword) {
       wx.showToast({ title: '请输入要搜索的账号', icon: 'none' });
       return;
     }
-    this.setData({ status: 'all', listActivated: true, listTitle: '搜索结果' }, () => {
-      this.runListAction(() => this.loadList(1));
-    });
+    this.setData({ status: 'all', listActivated: true, listTitle: '搜索结果', scrollIntoViewId: '' });
+    await this.runListAction(() => this.loadList(1));
+    // 搜索完自动滚动到结果区（结果可能在最近 10 条之外，页面下方看不到）
+    wx.nextTick(() => this.setData({ scrollIntoViewId: 'search-results' }));
   },
 
   clearSearch() {
@@ -122,12 +174,13 @@ Page({
       hasMore: false,
       listActivated: false,
       listTitle: '搜索结果',
-      status: 'all'
+      scrollIntoViewId: ''
     });
+    this.loadRecent();
   },
 
   async loadList(page = 1, append = false) {
-    const res = await yuukiApi.list(this.data.status, this.data.keyword.trim(), page, this.data.pageSize);
+    const res = await yuukiApi.list('all', this.data.keyword.trim(), page, this.data.pageSize);
     const incoming = (res.items || []) as YuukiAccount[];
     const items = append ? this.data.items.concat(incoming) : incoming;
     const total = Number(res.total || items.length);
@@ -145,63 +198,243 @@ Page({
     this.runListAction(() => this.loadList(this.data.page + 1, true));
   },
 
-  toggleAdvanced() {
-    const showAdvanced = !this.data.showAdvanced;
-    this.setData({ showAdvanced });
-    if (showAdvanced && !this.data.statsLoaded) {
-      this.setData({ advancedLoading: true });
-      this.loadStats()
-        .catch((err) => this.showError(err))
-        .finally(() => this.setData({ advancedLoading: false }));
+  openAccountAction(e: any) {
+    const account = this.accountFromRow(e);
+    if (!account) return;
+    this.setData({ actionAccount: account, showActionPopup: true });
+    // 用 /grant/status 拉取最新验证/发放状态，覆盖列表里的旧数据
+    this.refreshGrantStatus(account.username);
+  },
+
+  accountFromRow(e: any): YuukiAccount | null {
+    const dataset = e.currentTarget.dataset;
+    const username = String(dataset.username || '');
+    if (!username) return null;
+    return {
+      id: Number(dataset.id || 0),
+      username,
+      password: String(dataset.password || ''),
+      status: (dataset.status || 'available') as YuukiAccount['status'],
+      remark: dataset.remark ? String(dataset.remark) : '',
+      verify_status: dataset.verifyStatus !== undefined && dataset.verifyStatus !== '' ? Number(dataset.verifyStatus) : undefined,
+      grant_status: dataset.grantStatus !== undefined && dataset.grantStatus !== '' ? Number(dataset.grantStatus) : undefined,
+      uid: dataset.uid ? String(dataset.uid) : '',
+      server: dataset.server ? String(dataset.server) : ''
+    };
+  },
+
+  async refreshGrantStatus(username: string) {
+    try {
+      const res = await yuukiApi.grantStatus(username);
+      const account = res && res.account;
+      if (!account) return;
+      const current = this.data.actionAccount;
+      if (!current || current.username !== username) return;
+      this.setData({
+        actionAccount: {
+          ...current,
+          verify_status: account.verify_status !== undefined ? Number(account.verify_status) : current.verify_status,
+          grant_status: account.grant_status !== undefined ? Number(account.grant_status) : current.grant_status,
+          uid: account.uid ? String(account.uid) : current.uid,
+          server: account.server ? String(account.server) : current.server
+        }
+      });
+    } catch {
+      // 状态刷新失败不打扰用户，保留列表已有数据
     }
   },
 
-  async loadStats() {
-    const res = await yuukiApi.stats();
-    const s = res.stats || res || {};
-    const available = Number(s.available || 0);
-    const issued = Number(s.issued || 0);
-    const discarded = Number(s.discarded || 0);
-    this.setData({
-      statsLoaded: true,
-      stats: {
-        total: available + issued + discarded,
-        available,
-        issued,
-        discarded
+  closeActionPopup() {
+    this.setData({ showActionPopup: false, actionAccount: null });
+  },
+
+  onPreventBubble() {
+    // 阻止弹窗内容点击冒泡
+  },
+
+  copyFromPopup() {
+    const account = this.data.actionAccount;
+    if (!account) return;
+    wx.setClipboardData({ data: `${account.username}\n${account.password}` });
+    this.closeActionPopup();
+  },
+
+  allowLoginFromPopup() {
+    const account = this.data.actionAccount;
+    if (!account) return;
+    this.closeActionPopup();
+    this.executeAllowLogin(account.username, 'all');
+  },
+
+  specifyIpFromPopup() {
+    const account = this.data.actionAccount;
+    if (!account) return;
+    this.setData({ showIpInput: true, ipSegments: ['', '', '', ''], ipFocusIndex: 0 });
+  },
+
+  closeIpInput() {
+    this.setData({ showIpInput: false });
+  },
+
+  onIpSegmentInput(e: any) {
+    const index = Number(e.currentTarget.dataset.index);
+    let value = String(e.detail.value || '').replace(/[^\d]/g, '').slice(0, 3);
+    const ipSegments = this.data.ipSegments.slice();
+    ipSegments[index] = value;
+    this.setData({ ipSegments });
+    if (value.length === 3 && index < 3) {
+      wx.nextTick(() => this.setData({ ipFocusIndex: index + 1 }));
+    }
+  },
+
+  onIpSegmentTap(e: any) {
+    this.setData({ ipFocusIndex: Number(e.currentTarget.dataset.index) });
+  },
+
+  confirmIpInput() {
+    const account = this.data.actionAccount;
+    if (!account) return;
+    const segs = this.data.ipSegments.map((s) => String(s || '').trim());
+    if (segs.some((s) => !s || Number(s) < 0 || Number(s) > 255)) {
+      wx.showToast({ title: '请输入完整的 IP 地址', icon: 'none' });
+      return;
+    }
+    const ip = segs.join('.');
+    this.closeIpInput();
+    this.closeActionPopup();
+    this.executeAllowLogin(account.username, 'ip_add', ip);
+  },
+
+  issueFromPopup() {
+    const account = this.data.actionAccount;
+    if (!account) return;
+    this.closeActionPopup();
+    wx.showModal({
+      title: '标记发出',
+      content: `确认将 ${account.username} 标记为「已发出」？`,
+      success: (res) => {
+        if (res.confirm) this.accountAction(`issue:${account.username}`, () => yuukiApi.issue(account.username), '已标记发出');
       }
     });
   },
 
-  changeStatus(e: any) {
-    const status = String(e.currentTarget.dataset.status || 'all');
-    const option = STATUS_OPTIONS.find((item) => item.value === status);
-    this.setData({
-      status,
-      keyword: '',
-      listActivated: true,
-      listTitle: option ? `${option.label}账号` : '账号浏览'
-    }, () => this.runListAction(() => this.loadList(1)));
+  // ---- 搜索结果行内快捷操作（复制/允许登录/指定IP/邮箱验证/检测UID/标记发出） ----
+
+  copyFromRow(e: any) {
+    const username = String(e.currentTarget.dataset.username || '');
+    const password = String(e.currentTarget.dataset.password || '');
+    if (!username) return;
+    wx.setClipboardData({ data: `${username}\n${password}` });
   },
 
-  async takeNext() {
-    if (this.data.actionLoading) return;
-    this.setData({ actionLoading: 'next' });
+  allowLoginFromRow(e: any) {
+    const username = String(e.currentTarget.dataset.username || '');
+    if (!username || this.data.actionLoading) return;
+    this.executeAllowLogin(username, 'all');
+  },
+
+  specifyIpFromRow(e: any) {
+    const account = this.accountFromRow(e);
+    if (!account || this.data.actionLoading) return;
+    this.setData({ actionAccount: account, showIpInput: true, ipSegments: ['', '', '', ''], ipFocusIndex: 0 });
+  },
+
+  verifyFromRow(e: any) {
+    const account = this.accountFromRow(e);
+    if (!account || this.data.actionLoading) return;
+    this.setData({ actionAccount: account });
+    this.verifyUsername(account.username);
+  },
+
+  detectUidFromRow(e: any) {
+    const account = this.accountFromRow(e);
+    if (!account || this.data.actionLoading) return;
+    this.setData({ actionAccount: account });
+    this.detectUid(account.username);
+  },
+
+  issueFromRow(e: any) {
+    const account = this.accountFromRow(e);
+    if (!account || this.data.actionLoading) return;
+    wx.showModal({
+      title: '标记发出',
+      content: `确认将 ${account.username} 标记为「已发出」？`,
+      success: (res) => {
+        if (res.confirm) this.accountAction(`issue:${account.username}`, () => yuukiApi.issue(account.username), '已标记发出');
+      }
+    });
+  },
+
+  discardFromPopup() {
+    const account = this.data.actionAccount;
+    if (!account) return;
+    this.closeActionPopup();
+    wx.showModal({
+      title: '废弃账号',
+      content: `确认将 ${account.username} 标记为废弃？`,
+      confirmColor: '#ef4444',
+      success: (res) => {
+        if (res.confirm) this.accountAction(`discard:${account.username}`, () => yuukiApi.discard(account.username), '已标记废弃');
+      }
+    });
+  },
+
+  // ---- 发放（grant）：邮箱验证 / 检测 UID / 发放角色光锥 ----
+
+  async verifyFromPopup() {
+    const account = this.data.actionAccount;
+    if (!account || this.data.actionLoading) return;
+    await this.verifyUsername(account.username);
+  },
+
+  async verifyUsername(username: string) {
+    this.setData({ actionLoading: 'verify' });
     try {
-      const res = await yuukiApi.next('miniapp');
-      if (res.empty || !res.account) {
-        wx.showToast({ title: '暂无可用账号', icon: 'none' });
+      const res = await yuukiApi.grantVerify(username);
+      if (res && res.ok === false) throw new Error(res.error || '邮箱验证失败');
+      wx.showToast({ title: '邮箱验证成功', icon: 'success' });
+      await this.refreshGrantStatus(username);
+      await this.refreshAfterAction();
+    } catch (err) {
+      // 429 限流等错误信息（含等待秒数）由后端返回，直接展示
+      this.showError(err);
+    } finally {
+      this.setData({ actionLoading: '' });
+    }
+  },
+
+  async detectUidFromPopup() {
+    const account = this.data.actionAccount;
+    if (!account || this.data.actionLoading) return;
+    await this.detectUid(account.username);
+  },
+
+  async detectUid(username: string) {
+    this.setData({ actionLoading: 'detect-uid' });
+    try {
+      const res = await yuukiApi.grantPlayerCandidates(username);
+      const candidates = ((res && res.candidates) || []) as GrantCandidate[];
+      if (!candidates.length) {
+        wx.showModal({
+          title: '未检测到 UID',
+          content: (res && res.message) || '没有找到该账号的 UID/服务器，可点击「手动输入」。',
+          showCancel: false
+        });
         return;
       }
-      const account = res.account as YuukiAccount;
-      this.setData({ lastIssued: account });
-      wx.setClipboardData({ data: `${account.username}\n${account.password}` });
-      wx.showModal({
-        title: '已取号并复制',
-        content: `账号：${account.username}\n密码：${account.password}`,
-        showCancel: false
+      if (candidates.length === 1) {
+        // 1 个自动填入
+        this.saveUidSelection(candidates[0]);
+        return;
+      }
+      // 多个：弹选择器，显示 server + uid
+      this.setData({
+        candidates,
+        candidateLabels: candidates.map((c) => `${c.server} · ${c.uid}`),
+        candidateIndex: 0,
+        showUidManual: false,
+        showUidPicker: true
       });
-      await this.refreshAfterAction();
     } catch (err) {
       this.showError(err);
     } finally {
@@ -209,50 +442,140 @@ Page({
     }
   },
 
-  copyAccount(e: any) {
-    const username = String(e.currentTarget.dataset.username || '');
-    const password = String(e.currentTarget.dataset.password || '');
-    wx.setClipboardData({ data: `${username}\n${password}` });
+  async saveUidSelection(candidate: GrantCandidate) {
+    const account = this.data.actionAccount;
+    if (!account) return;
+    // 记住选择，并写回后端兜底持久化（setinfo）
+    this.setData({ actionAccount: { ...account, uid: candidate.uid, server: candidate.server } });
+    try {
+      await yuukiApi.grantSetinfo(account.username, candidate.uid, candidate.server);
+      wx.showToast({ title: `已选择 ${candidate.server}`, icon: 'success' });
+    } catch (err) {
+      this.showError(err);
+    }
+    await this.refreshAfterAction();
   },
 
-  allowLogin(e: any) {
-    const username = String(e.currentTarget.dataset.username || '');
-    const typ = e.currentTarget.dataset.typ as 'all' | 'ip_add';
-    this.executeAllowLogin(username, typ);
+  closeUidPicker() {
+    this.setData({ showUidPicker: false, showUidManual: false });
   },
 
-  executeAllowLogin(username: string, typ: 'all' | 'ip_add') {
+  onCandidateChange(e: any) {
+    this.setData({ candidateIndex: Number(e.detail.value) });
+  },
+
+  confirmCandidate() {
+    const candidate = this.data.candidates[this.data.candidateIndex];
+    if (!candidate) return;
+    this.closeUidPicker();
+    this.saveUidSelection(candidate);
+  },
+
+  switchUidManual() {
+    this.setData({ showUidManual: true });
+  },
+
+  onUidInput(e: any) {
+    this.setData({ uidInput: String(e.detail.value || '').trim() });
+  },
+
+  onServerInput(e: any) {
+    this.setData({ serverInput: String(e.detail.value || '').trim() });
+  },
+
+  confirmUidManual() {
+    const uid = this.data.uidInput.trim();
+    const server = this.data.serverInput.trim();
+    if (!uid || !server) {
+      wx.showToast({ title: '请填写 UID 和服务器', icon: 'none' });
+      return;
+    }
+    this.closeUidPicker();
+    this.saveUidSelection({ uid, server });
+  },
+
+  grantAvatarsFromPopup() {
+    this.grantFromPopup('avatars');
+  },
+
+  grantLightconesFromPopup() {
+    this.grantFromPopup('lightcones');
+  },
+
+  grantFromPopup(kind: 'avatars' | 'lightcones') {
+    const account = this.data.actionAccount;
+    if (!account || this.data.actionLoading) return;
+    // 前置条件检查：先验证 → 再选 UID → 再发放
+    if ((account.verify_status ?? 0) !== 1) {
+      wx.showModal({ title: '请先邮箱验证', content: '发放前需先完成「邮箱验证」解锁发放权限。', showCancel: false });
+      return;
+    }
+    const uid = account.uid && account.uid.trim();
+    const server = account.server && account.server.trim();
+    if (!uid || !server) {
+      wx.showModal({ title: '请先检测 UID', content: '未找到该账号的 UID/服务器，请先「检测 UID」或手动输入。', showCancel: false });
+      return;
+    }
+    const label = kind === 'avatars' ? '全部角色' : '全部光锥';
+    wx.showModal({
+      title: `发放${label}`,
+      content: `确认给 ${account.username}（${server} · ${uid}）发放${label}？\n注意：账号需在游戏内在线，发放期间请勿退出游戏。`,
+      confirmColor: '#1677ff',
+      success: (res) => {
+        if (res.confirm) this.doGrant(kind, account.username, uid, server);
+      }
+    });
+  },
+
+  async doGrant(kind: 'avatars' | 'lightcones', username: string, uid: string, server: string) {
+    this.setData({ actionLoading: 'grant', grantKind: kind });
+    const label = kind === 'avatars' ? '角色' : '光锥';
+    const hideLoading = () => {
+      try { wx.hideLoading(); } catch { /* 页面已卸载等场景忽略 */ }
+    };
+    wx.showLoading({ title: `发放${label}中…`, mask: true });
+    try {
+      // 提交后轮询 /grant/status 显示进度，直到任务结束
+      const result = await yuukiApi.grant(kind, username, uid, server, {
+        onProgress: (task) => {
+          const progress = task && typeof task.progress === 'number' ? task.progress : null;
+          wx.showLoading({ title: progress !== null ? `发放${label}中 ${progress}%…` : `发放${label}中…`, mask: true });
+        },
+        shouldAbort: () => (this as any)._pageClosed === true
+      });
+      if ((this as any)._pageClosed) return;
+      hideLoading();
+
+      const task = result.task || {};
+      const acc = result.account || {};
+      const grantStatus = acc.grant_status !== undefined ? Number(acc.grant_status) : undefined;
+      const failed = grantStatus === 3 || task.status === 'error' || task.status === 'failed' || task.status === 'fail';
+      const message = task.message || (failed ? `发放${label}失败` : `发放${label}完成`);
+      wx.showModal({
+        title: failed ? '发放失败' : '发放完成',
+        content: String(message),
+        showCancel: false
+      });
+      await this.refreshGrantStatus(username);
+      await this.refreshAfterAction();
+    } catch (err) {
+      if ((this as any)._pageClosed) return;
+      hideLoading();
+      this.showError(err);
+    } finally {
+      this.setData({ actionLoading: '', grantKind: '' });
+    }
+  },
+
+  executeAllowLogin(username: string, typ: 'all' | 'ip_add', ip = '') {
     if (!username || this.data.actionLoading) return;
-    const successText = typ === 'all' ? '已允许登录' : '已允许服务器 IP';
+    const successText = typ === 'all' ? '已允许登录' : ip ? `已指定 IP ${ip}` : '已允许服务器 IP';
     this.accountAction(
-      `allow:${username}:${typ}`,
-      () => yuukiApi.allowLogin(username, typ),
+      `allow:${username}:${typ}:${ip}`,
+      () => yuukiApi.allowLogin(username, typ, ip),
       successText,
       true
     );
-  },
-
-  releaseAccount(e: any) {
-    const username = String(e.currentTarget.dataset.username || '');
-    wx.showModal({
-      title: '释放回池',
-      content: `确认将 ${username} 重新标记为可用？`,
-      success: (res) => {
-        if (res.confirm) this.accountAction(`release:${username}`, () => yuukiApi.release(username), '已回池');
-      }
-    });
-  },
-
-  discardAccount(e: any) {
-    const username = String(e.currentTarget.dataset.username || '');
-    wx.showModal({
-      title: '废弃账号',
-      content: `确认将 ${username} 标记为废弃？`,
-      confirmColor: '#ef4444',
-      success: (res) => {
-        if (res.confirm) this.accountAction(`discard:${username}`, () => yuukiApi.discard(username), '已标记废弃');
-      }
-    });
   },
 
   async accountAction(key: string, action: () => Promise<any>, successText: string, showIp = false) {
@@ -280,8 +603,7 @@ Page({
   },
 
   async refreshAfterAction() {
-    const tasks: Promise<any>[] = [];
-    if (this.data.statsLoaded) tasks.push(this.loadStats());
+    const tasks: Promise<any>[] = [this.loadRecent()];
     if (this.data.listActivated) tasks.push(this.loadList(1));
     if (tasks.length) await Promise.all(tasks);
   },
