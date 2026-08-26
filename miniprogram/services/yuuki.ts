@@ -89,6 +89,10 @@ const PREFIX = '/api/yuuki-pool';
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+export function buildYuukiListPath(status: string, keyword: string, page: number, pageSize: number): string {
+  return `${PREFIX}/list?status=${encodeURIComponent(status)}&keyword=${encodeURIComponent(keyword)}&page=${page}&page_size=${pageSize}`;
+}
+
 function parseTask(res: any): YuukiRegisterTask {
   const task = res && res.task ? (res.task as YuukiRegisterTask) : null;
   if (!task || !task.status) throw new Error('获取注册任务状态失败');
@@ -114,7 +118,7 @@ async function pollRegisterStatus(options: YuukiRegisterOptions = {}): Promise<Y
 export const yuukiApi = {
   stats: () => request<any>(`${PREFIX}/stats`, { method: 'POST', data: {} }),
   list: (status: string, keyword: string, page: number, pageSize = 50) =>
-    request<any>(`${PREFIX}/list`, { method: 'POST', data: { status, keyword, page, page_size: pageSize } }),
+    request<any>(buildYuukiListPath(status, keyword, page, pageSize)),
   /**
    * 启动注册任务并轮询直到完成。
    * POST /register 只返回任务快照，账号列表在 GET /register/status 的 task.items 中；
