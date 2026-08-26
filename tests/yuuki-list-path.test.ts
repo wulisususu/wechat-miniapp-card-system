@@ -1,4 +1,8 @@
+/// <reference path="../typings/types/wx/index.d.ts" />
+
 import { buildYuukiListPath } from '../miniprogram/services/yuuki';
+
+declare function require(path: string): any;
 
 function assertEqual(actual: string, expected: string): void {
   if (actual !== expected) {
