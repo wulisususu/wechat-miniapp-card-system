@@ -174,8 +174,15 @@
 
       <view class="action-buttons grant-buttons">
         <block wx:if="{{actionAccount.status !== 'discarded'}}">
-          <button class="action-btn grant" bindtap="grantAvatarsFromPopup" loading="{{actionLoading === 'grant' && grantKind === 'avatars'}}" disabled="{{actionLoading}}">发放全部角色</button>
-          <button class="action-btn grant" bindtap="grantLightconesFromPopup" loading="{{actionLoading === 'grant' && grantKind === 'lightcones'}}" disabled="{{actionLoading}}">发放全部光锥</button>
+          <button class="action-btn grant" data-kind="avatars" bindtap="grantFromPopup" loading="{{actionLoading === 'grant' && grantKind === 'avatars'}}" disabled="{{actionLoading}}">发放全部角色</button>
+          <button class="action-btn unlock" data-kind="unlock" bindtap="grantFromPopup" loading="{{actionLoading === 'grant' && grantKind === 'unlock'}}" disabled="{{actionLoading}}">解锁全部剧情</button>
+          <button class="action-btn grant" data-kind="lightcones" bindtap="grantFromPopup" loading="{{actionLoading === 'grant' && grantKind === 'lightcones'}}" disabled="{{actionLoading}}">发放全部光锥</button>
+        </block>
+      </view>
+
+      <view class="action-buttons grant-buttons two-col">
+        <block wx:if="{{actionAccount.status !== 'discarded'}}">
+          <button class="action-btn unstuck" data-kind="unstuck" bindtap="grantFromPopup" loading="{{actionLoading === 'grant' && grantKind === 'unstuck'}}" disabled="{{actionLoading}}">解除卡场景</button>
           <button class="action-btn discard" bindtap="discardFromPopup" disabled="{{actionLoading}}">废弃</button>
         </block>
       </view>

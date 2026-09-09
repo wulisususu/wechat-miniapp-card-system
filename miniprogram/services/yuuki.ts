@@ -85,12 +85,44 @@ export interface GrantOptions {
   shouldAbort?: () => boolean;
 }
 
+/** 高级功能动作：与 web 后台「高级功能」面板一一对应 */
+export type YuukiGrantKind = 'avatars' | 'lightcones' | 'unlock' | 'unstuck';
+
+export interface GrantPrecondition {
+  /** 是否要求账号已通过邮箱验证（对应后端 start_grant 的 require_verify） */
+  needVerify: boolean;
+  /** 是否要求前端已检测到 UID/服务器（UID 由后端探测时无需前置） */
+  needUid: boolean;
+}
+
+export interface GrantRequestSpec {
+  path: string;
+  data: { username: string; by: string };
+}
+
+const GRANT_PRECONDITIONS: Record<YuukiGrantKind, GrantPrecondition> = {
+  avatars: { needVerify: true, needUid: true },
+  lightcones: { needVerify: true, needUid: true },
+  unlock: { needVerify: true, needUid: false },
+  unstuck: { needVerify: false, needUid: false }
+};
+
+/** 各动作的前置条件，供页面与测试共用（对齐后端 require_verify / UID 探测行为）。 */
+export function grantPrecondition(kind: YuukiGrantKind): GrantPrecondition {
+  return { ...GRANT_PRECONDITIONS[kind] };
+}
+
 const PREFIX = '/api/yuuki-pool';
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export function buildYuukiListPath(status: string, keyword: string, page: number, pageSize: number): string {
   return `${PREFIX}/list?status=${encodeURIComponent(status)}&keyword=${encodeURIComponent(keyword)}&page=${page}&page_size=${pageSize}`;
+}
+
+/** 构造发放类请求：后端 YuukiGrantRequest 只接受 username / by，UID 由后端自行探测。 */
+export function buildGrantRequest(kind: YuukiGrantKind, username: string): GrantRequestSpec {
+  return { path: `${PREFIX}/grant/${kind}`, data: { username, by: 'miniapp' } };
 }
 
 function parseTask(res: any): YuukiRegisterTask {
@@ -146,19 +178,22 @@ export const yuukiApi = {
     return pollRegisterStatus(options);
   },
   /**
-   * 发放全部角色/光锥（后台任务）：提交后轮询 /grant/status 直到任务结束。
-   * 前置条件（前端需检查）：verify_status==1 且已有 uid+server，且账号需在游戏内在线。
+   * 高级功能：提交后台任务并轮询 /grant/status 直到任务结束。
+   * kind 对应 web 后台「高级功能」面板：
+   * - avatars / lightcones：满级满命全角色 / 满级满精全光锥（需先邮箱验证 + UID）
+   * - unlock：解锁全部剧情/任务（需先邮箱验证，UID 由后端探测）
+   * - unstuck：解除卡场景/卡加载（无需邮箱验证）
+   * 前置条件见 grantPrecondition()。
    */
   grant: async (
-    kind: 'avatars' | 'lightcones',
+    kind: YuukiGrantKind,
     username: string,
-    uid: string,
-    server: string,
     options: GrantOptions = {}
   ): Promise<GrantStatusResult> => {
-    const res = await request<any>(`${PREFIX}/grant/${kind}`, {
+    const spec = buildGrantRequest(kind, username);
+    const res = await request<any>(spec.path, {
       method: 'POST',
-      data: { username, uid, server },
+      data: spec.data,
       timeout: 20000
     });
     const task = (res && res.task) || null;

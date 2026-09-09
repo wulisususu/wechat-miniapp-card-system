@@ -1,6 +1,14 @@
-import { yuukiApi, YuukiAccount, GrantCandidate } from '../../services/yuuki';
+import { yuukiApi, YuukiAccount, GrantCandidate, YuukiGrantKind, grantPrecondition } from '../../services/yuuki';
 
 const RECENT_COUNT = 10;
+
+/** 高级功能动作：标题用于确认弹窗，short 用于 loading 文案（与 web 后台「高级功能」一致） */
+const GRANT_ACTIONS: Record<YuukiGrantKind, { title: string; short: string }> = {
+  avatars: { title: '发放满级满命全角色', short: '发放角色' },
+  lightcones: { title: '发放满级满精全光锥', short: '发放光锥' },
+  unlock: { title: '解锁全部剧情/任务', short: '解锁剧情' },
+  unstuck: { title: '解除卡场景/卡加载', short: '解除卡场景' }
+};
 
 Page({
   data: {
@@ -33,8 +41,8 @@ Page({
     candidateIndex: 0,
     uidInput: '',
     serverInput: '',
-    // 发放中标记（avatars | lightcones），用于按钮 loading 态与禁止重复点击
-    grantKind: '' as '' | 'avatars' | 'lightcones',
+    // 高级功能执行中标记（avatars | lightcones | unlock | unstuck），用于按钮 loading 态与禁止重复点击
+    grantKind: '' as '' | YuukiGrantKind,
     // 搜索结果自动滚动定位
     scrollIntoViewId: ''
   },
@@ -379,7 +387,7 @@ Page({
     });
   },
 
-  // ---- 发放（grant）：邮箱验证 / 检测 UID / 发放角色光锥 ----
+  // ---- 高级功能：邮箱验证 / 检测 UID / 发放角色光锥 / 解锁剧情 / 解除卡场景 ----
 
   async verifyFromPopup() {
     const account = this.data.actionAccount;
@@ -494,52 +502,50 @@ Page({
     this.saveUidSelection({ uid, server });
   },
 
-  grantAvatarsFromPopup() {
-    this.grantFromPopup('avatars');
-  },
-
-  grantLightconesFromPopup() {
-    this.grantFromPopup('lightcones');
-  },
-
-  grantFromPopup(kind: 'avatars' | 'lightcones') {
+  /** 高级功能入口：按 data-kind 走统一前置校验（邮箱验证 / UID 由 grantPrecondition 决定） */
+  grantFromPopup(e: any) {
     const account = this.data.actionAccount;
     if (!account || this.data.actionLoading) return;
-    // 前置条件检查：先验证 → 再选 UID → 再发放
-    if ((account.verify_status ?? 0) !== 1) {
-      wx.showModal({ title: '请先邮箱验证', content: '发放前需先完成「邮箱验证」解锁发放权限。', showCancel: false });
+    const kind = String(e.currentTarget.dataset.kind || '') as YuukiGrantKind;
+    const action = GRANT_ACTIONS[kind];
+    if (!action) return;
+
+    const pre = grantPrecondition(kind);
+    if (pre.needVerify && (account.verify_status ?? 0) !== 1) {
+      wx.showModal({ title: '请先邮箱验证', content: '该操作需先完成「邮箱验证」解锁发放权限。', showCancel: false });
       return;
     }
-    const uid = account.uid && account.uid.trim();
-    const server = account.server && account.server.trim();
-    if (!uid || !server) {
+    const uid = (account.uid || '').trim();
+    const server = (account.server || '').trim();
+    if (pre.needUid && (!uid || !server)) {
       wx.showModal({ title: '请先检测 UID', content: '未找到该账号的 UID/服务器，请先「检测 UID」或手动输入。', showCancel: false });
       return;
     }
-    const label = kind === 'avatars' ? '全部角色' : '全部光锥';
+
+    const target = uid && server ? `（${server} · ${uid}）` : '';
     wx.showModal({
-      title: `发放${label}`,
-      content: `确认给 ${account.username}（${server} · ${uid}）发放${label}？\n注意：账号需在游戏内在线，发放期间请勿退出游戏。`,
+      title: action.title,
+      content: `确认对 ${account.username}${target} 执行「${action.title}」？\n注意：账号需在游戏内登录过，任务执行期间请勿退出游戏。`,
       confirmColor: '#1677ff',
       success: (res) => {
-        if (res.confirm) this.doGrant(kind, account.username, uid, server);
+        if (res.confirm) this.doGrant(kind, account.username);
       }
     });
   },
 
-  async doGrant(kind: 'avatars' | 'lightcones', username: string, uid: string, server: string) {
+  async doGrant(kind: YuukiGrantKind, username: string) {
+    const action = GRANT_ACTIONS[kind];
     this.setData({ actionLoading: 'grant', grantKind: kind });
-    const label = kind === 'avatars' ? '角色' : '光锥';
     const hideLoading = () => {
       try { wx.hideLoading(); } catch { /* 页面已卸载等场景忽略 */ }
     };
-    wx.showLoading({ title: `发放${label}中…`, mask: true });
+    wx.showLoading({ title: `${action.short}中…`, mask: true });
     try {
       // 提交后轮询 /grant/status 显示进度，直到任务结束
-      const result = await yuukiApi.grant(kind, username, uid, server, {
+      const result = await yuukiApi.grant(kind, username, {
         onProgress: (task) => {
           const progress = task && typeof task.progress === 'number' ? task.progress : null;
-          wx.showLoading({ title: progress !== null ? `发放${label}中 ${progress}%…` : `发放${label}中…`, mask: true });
+          wx.showLoading({ title: progress !== null ? `${action.short}中 ${progress}%…` : `${action.short}中…`, mask: true });
         },
         shouldAbort: () => (this as any)._pageClosed === true
       });
@@ -550,9 +556,9 @@ Page({
       const acc = result.account || {};
       const grantStatus = acc.grant_status !== undefined ? Number(acc.grant_status) : undefined;
       const failed = grantStatus === 3 || task.status === 'error' || task.status === 'failed' || task.status === 'fail';
-      const message = task.message || (failed ? `发放${label}失败` : `发放${label}完成`);
+      const message = task.message || (failed ? `${action.title}失败` : `${action.title}已提交，账号在线才会生效`);
       wx.showModal({
-        title: failed ? '发放失败' : '发放完成',
+        title: failed ? `${action.title}失败` : `${action.title}完成`,
         content: String(message),
         showCancel: false
       });

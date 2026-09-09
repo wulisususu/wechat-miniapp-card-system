@@ -13,8 +13,11 @@
   - 在线注册 1 / 2 / 3 / 5 / 10 / 20 个：提交后台任务后轮询进度，账号完成后写入号池；
   - 搜索账号或备注：搜索激活时隐藏「最近账号」列表，结果区显示总数并支持分页加载；
   - 搜索结果行内快捷操作：复制账号密码、允许登录、指定 IP、邮箱验证、检测 UID、标记发出；
-  - 账号操作弹窗（点击任意账号行）：验证/发放状态、复制、允许登录、指定 IP、邮箱验证、检测 UID、标记发出、发放全部角色、发放全部光锥、废弃；
-  - 发放前置条件由前端校验：先邮箱验证（`verify_status == 1`）→ 再检测 UID（`uid` + `server`）→ 最后发放。
+  - 账号操作弹窗（点击任意账号行）：验证/发放状态、复制、允许登录、指定 IP、邮箱验证、检测 UID、标记发出、发放满级满命全角色、解锁全部剧情/任务、发放满级满精全光锥、解除卡场景/卡加载、废弃。
+- 「高级功能」与 web 后台（`/ui/yuuki.html` 的「高级功能」面板）逐项对齐，前置条件集中在 `services/yuuki.ts` 的 `grantPrecondition()`，并由 `tests/yuuki-grant-contract.test.ts` 守卫：
+  - `avatars` / `lightcones`：需先邮箱验证（`verify_status == 1`），且已有 `uid` + `server`；
+  - `unlock`：需先邮箱验证，UID 由后端自行探测；
+  - `unstuck`：无需邮箱验证、无需 UID 前置（后端 `require_verify=False`），账号需在游戏内登录过。
 - 已废弃账号仅保留业务标记，前端不再显示 allowlogin / 发放类操作。
 - `services/yuuki.ts` 中的 `stats`（库存统计）、`next`（FIFO 取号）、`release`（回池）、`grantProbe` 仍保留封装，但页面当前未直接调用；页面「标记发出」实际请求 `/next`。
 
@@ -42,8 +45,10 @@ miniprogram/
     └── util.ts               # 模板遗留工具函数（仅 pages/logs 使用）
 
 tests/
-├── yuuki-list-path.test.ts       # 列表请求必须使用 GET 查询参数
-└── yuuki-search-layout.test.ps1  # 搜索激活时必须隐藏「最近账号」
+├── yuuki-list-path.test.ts        # 列表请求必须使用 GET 查询参数
+├── yuuki-grant-contract.test.ts   # 高级功能前置条件与请求契约（含 unlock / unstuck）
+├── yuuki-search-layout.test.ps1   # 搜索激活时必须隐藏「最近账号」
+└── yuuki-grant-ui.test.ps1        # 高级功能按钮必须绑定统一的 grantFromPopup
 
 typings/                          # 内嵌 wx 类型声明（含一处 TypeScript 7 兼容补丁）
 docs/superpowers/                 # 设计与计划文档
@@ -98,7 +103,9 @@ POST /api/yuuki-pool/grant/verify
 POST /api/yuuki-pool/grant/player-candidates
 POST /api/yuuki-pool/grant/setinfo
 POST /api/yuuki-pool/grant/avatars
+POST /api/yuuki-pool/grant/unlock
 POST /api/yuuki-pool/grant/lightcones
+POST /api/yuuki-pool/grant/unstuck
 GET  /api/yuuki-pool/grant/status?username=xxx
 
 已封装但页面未调用（后端仍提供）：
@@ -136,19 +143,21 @@ TypeScript 测试需要先编译再运行（`tests/yuuki-list-path.test.ts` 依�
 
 ```powershell
 $out = Join-Path $env:TEMP 'mp-test'
-npx tsc tests/yuuki-list-path.test.ts --ignoreConfig --outDir $out --module CommonJS `
-  --target ES2020 --lib ES2020 --skipLibCheck --rootDir .
+npx tsc tests/yuuki-list-path.test.ts tests/yuuki-grant-contract.test.ts --ignoreConfig --outDir $out `
+  --module CommonJS --target ES2020 --lib ES2020 --skipLibCheck --rootDir .
 node (Join-Path $out 'tests\yuuki-list-path.test.js')
+node (Join-Path $out 'tests\yuuki-grant-contract.test.js')
 ```
 
 WXML 布局守卫测试（Windows PowerShell）：
 
 ```powershell
 & .\tests\yuuki-search-layout.test.ps1
+& .\tests\yuuki-grant-ui.test.ps1
 ```
 
-- 该脚本可加 `-TemplatePath <path>` 指向任意 wxml，用于先验证测试会失败（红），再验证修改后通过（绿）。
-- 文件必须保存为 **UTF-8 with BOM**：Windows PowerShell 5.1 会把无 BOM 的 UTF-8 脚本按本地代码页解析，中文注释末尾字节可能吞掉换行符，导致下一条语句被并入注释。
+- 两个 `*.test.ps1` 均可加 `-TemplatePath <path>` 指向任意 wxml，用于先验证测试会失败（红），再验证修改后通过（绿）。
+- 这两个脚本必须保存为 **UTF-8 with BOM**：Windows PowerShell 5.1 会把无 BOM 的 UTF-8 脚本按本地代码页解析，中文注释末尾字节可能吞掉换行符，导致下一条语句被并入注释。
 
 ### typings 兼容补丁
 
