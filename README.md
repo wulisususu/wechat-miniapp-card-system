@@ -9,8 +9,14 @@
 - 默认启动页仍为 `pages/chat/index`，打开小程序直接进入测试服聊天，不增加中间首页。
 - 左上角统一业务切换抽屉：`测试服` / `Yuuki 号池`。
 - 测试服聊天继续使用原有 `/api/wechat/message` 协议。
-- Yuuki 号池使用独立手机管理页，支持：库存统计、在线注册 1~3 个、FIFO 取号、搜索/筛选、复制账号密码、回池、废弃标记、允许所有 IP、允许服务器当前 IP。
-- 已废弃账号仅保留业务标记，前端不会继续显示 allowlogin 操作。
+- Yuuki 号池使用独立手机管理页，当前能力：
+  - 在线注册 1 / 2 / 3 / 5 / 10 / 20 个：提交后台任务后轮询进度，账号完成后写入号池；
+  - 搜索账号或备注：搜索激活时隐藏「最近账号」列表，结果区显示总数并支持分页加载；
+  - 搜索结果行内快捷操作：复制账号密码、允许登录、指定 IP、邮箱验证、检测 UID、标记发出；
+  - 账号操作弹窗（点击任意账号行）：验证/发放状态、复制、允许登录、指定 IP、邮箱验证、检测 UID、标记发出、发放全部角色、发放全部光锥、废弃；
+  - 发放前置条件由前端校验：先邮箱验证（`verify_status == 1`）→ 再检测 UID（`uid` + `server`）→ 最后发放。
+- 已废弃账号仅保留业务标记，前端不再显示 allowlogin / 发放类操作。
+- `services/yuuki.ts` 中的 `stats`（库存统计）、`next`（FIFO 取号）、`release`（回池）、`grantProbe` 仍保留封装，但页面当前未直接调用；页面「标记发出」实际请求 `/next`。
 
 ## 目录结构
 
@@ -19,18 +25,28 @@ miniprogram/
 ├── app.ts
 ├── app.json
 ├── components/
-│   └── business-switcher/   # 左上角业务切换抽屉
+│   ├── business-switcher/   # 左上角业务切换抽屉
+│   └── navigation-bar/      # 模板自带自定义导航栏（仅 pages/index、pages/logs 使用）
 ├── pages/
 │   ├── chat/                # 默认测试服聊天
 │   ├── yuuki/               # Yuuki 号池手机管理页
-│   ├── index/               # 历史模板页，当前非默认入口
-│   └── logs/
-└── services/
-    ├── request.ts            # 统一请求层（读取配置并附加 Basic Auth）
-    ├── config.ts             # 配置默认值（占位符，可提交）
-    ├── config.local.ts       # 本地配置（真实地址/凭证，已 gitignore，不入库）
-    ├── config.local.example.ts # 本地配置模板
-    └── yuuki.ts              # Yuuki API 封装
+│   ├── index/               # 模板遗留页，当前非入口
+│   └── logs/                # 模板遗留页，当前非入口
+├── services/
+│   ├── request.ts            # 统一请求层（读取配置并附加 Basic Auth）
+│   ├── config.ts             # 配置默认值（占位符，可提交）
+│   ├── config.local.ts       # 本地配置（真实地址/凭证，已 gitignore，不入库）
+│   ├── config.local.example.ts # 本地配置模板
+│   └── yuuki.ts              # Yuuki API 封装（含注册/发放轮询）
+└── utils/
+    └── util.ts               # 模板遗留工具函数（仅 pages/logs 使用）
+
+tests/
+├── yuuki-list-path.test.ts       # 列表请求必须使用 GET 查询参数
+└── yuuki-search-layout.test.ps1  # 搜索激活时必须隐藏「最近账号」
+
+typings/                          # 内嵌 wx 类型声明（含一处 TypeScript 7 兼容补丁）
+docs/superpowers/                 # 设计与计划文档
 ```
 
 ## 配置
@@ -64,28 +80,35 @@ export const password = 'your-basic-auth-password';  // 号池 Basic Auth 密码
 POST /api/wechat/message
 ```
 
-Yuuki 页面当前复用现有号池后端：
+Yuuki 页面当前复用的号池后端接口：
 
 ```text
-GET  /api/yuuki-pool/stats
-GET  /api/yuuki-pool/list
+页面当前调用：
+
+GET  /api/yuuki-pool/list?status=&keyword=&page=&page_size=
 POST /api/yuuki-pool/register
 GET  /api/yuuki-pool/register/status
-GET  /api/yuuki-pool/next
-POST /api/yuuki-pool/release
+GET  /api/yuuki-pool/next?note=&operator=
 POST /api/yuuki-pool/discard
 POST /api/yuuki-pool/allowlogin
 
 发放（grant）系列：
 
 POST /api/yuuki-pool/grant/verify
-POST /api/yuuki-pool/grant/probe
 POST /api/yuuki-pool/grant/player-candidates
+POST /api/yuuki-pool/grant/setinfo
 POST /api/yuuki-pool/grant/avatars
 POST /api/yuuki-pool/grant/lightcones
 GET  /api/yuuki-pool/grant/status?username=xxx
-POST /api/yuuki-pool/grant/setinfo
+
+已封装但页面未调用（后端仍提供）：
+
+GET  /api/yuuki-pool/stats
+POST /api/yuuki-pool/release
+POST /api/yuuki-pool/grant/probe
 ```
+
+> `list` 使用 GET 查询参数（`tests/yuuki-list-path.test.ts` 守卫该行为）；后端保留 POST 兼容路由，但小程序不再依赖它。
 
 > 号池接口受 nginx Basic Auth 保护（`401 realm="Card Backend"`），`request.ts` 会自动附加 `Authorization: Basic ...`。公开仓库不保存真实生产域名或认证信息。
 
@@ -103,11 +126,39 @@ POST /api/yuuki-pool/grant/setinfo
 
 实现思路参考微信小程序官方长列表/组件生态以及腾讯 TDesign MiniProgram 的组件分层方式，但未复制其业务逻辑，也未引入其完整组件库。
 
+## 本地校验
+
+```bash
+npm run typecheck        # tsc --noEmit，必须无错误
+```
+
+TypeScript 测试需要先编译再运行（`tests/yuuki-list-path.test.ts` 依赖 `wx.arrayBufferToBase64` 类型声明）：
+
+```powershell
+$out = Join-Path $env:TEMP 'mp-test'
+npx tsc tests/yuuki-list-path.test.ts --ignoreConfig --outDir $out --module CommonJS `
+  --target ES2020 --lib ES2020 --skipLibCheck --rootDir .
+node (Join-Path $out 'tests\yuuki-list-path.test.js')
+```
+
+WXML 布局守卫测试（Windows PowerShell）：
+
+```powershell
+& .\tests\yuuki-search-layout.test.ps1
+```
+
+- 该脚本可加 `-TemplatePath <path>` 指向任意 wxml，用于先验证测试会失败（红），再验证修改后通过（绿）。
+- 文件必须保存为 **UTF-8 with BOM**：Windows PowerShell 5.1 会把无 BOM 的 UTF-8 脚本按本地代码页解析，中文注释末尾字节可能吞掉换行符，导致下一条语句被并入注释。
+
+### typings 兼容补丁
+
+`typings/types/wx/lib.wx.app.d.ts` 中 `GetApp` 的泛型补上了 `T extends IAnyObject` 约束。上游 `miniprogram-api-typings`（2.12.0）声明为 `<T = IAnyObject>`，默认值满足约束但 `T` 本身不满足，TypeScript 7 会报 `TS2344: Type 'T' does not satisfy the constraint 'IAnyObject'`。该补丁只影响类型检查，不改变运行时行为；若日后覆盖或重新内嵌该 typings 目录，需要重新补上。
+
 ## 微信开发者工具运行
 
 1. `git pull` 获取最新代码。
 2. 用微信开发者工具打开仓库根目录（包含 `project.config.json`）。
-3. 确认本地实际 AppID 与 `services/request.ts` 的生产 API 地址。
+3. 确认本地实际 AppID，以及 `miniprogram/services/config.local.ts` 的后端地址与 Basic Auth 凭证（模板见 `config.local.example.ts`）。
 4. 开发阶段可在开发者工具中调试；真机/体验版必须配置合法 HTTPS request 域名。
 5. 默认进入测试服聊天，点击左上角按钮切换到 Yuuki 号池。
 
