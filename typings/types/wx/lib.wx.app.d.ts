@@ -262,7 +262,11 @@ declare namespace WechatMiniprogram.App {
     }
 
     interface GetApp {
-        <T = IAnyObject>(opts?: GetAppOption): Instance<T>
+        /**
+         * 本地兼容补丁：上游 typings 的 `T` 没有约束，`Instance<T extends IAnyObject>`
+         * 在 TypeScript 7 下会报 TS2344。补上约束后语义不变，仅让 tsc 通过。
+         */
+        <T extends IAnyObject = IAnyObject>(opts?: GetAppOption): Instance<T>
     }
 }
 
