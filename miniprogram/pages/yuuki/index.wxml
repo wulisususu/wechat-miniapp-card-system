@@ -74,7 +74,7 @@
       </view>
     </view>
 
-    <view class="results-card recent-card">
+    <view wx:if="{{!listActivated}}" class="results-card recent-card">
       <view class="results-head">
         <text class="results-title">最近账号</text>
         <text class="results-count">最近 {{recentAccounts.length}} 条</text>
