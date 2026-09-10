@@ -51,7 +51,9 @@ export function request<T = any>(path: string, options: RequestOptions = {}): Pr
         const err = new Error(detail) as Error & { statusCode?: number };
         err.statusCode = res.statusCode;
         if (res.statusCode === 401) {
-          err.message = '认证失败：请检查 config.local.ts 中号池的 Basic Auth 账号密码';
+          // 401 只代表「本版本内置的凭证被服务器拒绝」，真机上无法去看 config.local.ts，
+          // 因此提示要指向可执行动作：更新配置并重新上传版本。
+          err.message = '认证失败（401）：后端凭证失效，请更新配置后重新上传';
         }
         reject(err);
       },
