@@ -1,5 +1,5 @@
 <view class="page">
-  <business-switcher current="test-server" title="测试服" />
+  <business-switcher current="activation" title="激活码服务" />
 
   <scroll-view
     class="messages-container"

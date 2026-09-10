@@ -1,7 +1,7 @@
 Component({
   properties: {
-    current: { type: String, value: 'test-server' },
-    title: { type: String, value: '测试服' }
+    current: { type: String, value: 'activation' },
+    title: { type: String, value: '激活码服务' }
   },
   data: {
     open: false,

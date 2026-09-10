@@ -1,9 +1,7 @@
 {
   "pages": [
     "pages/chat/index",
-    "pages/yuuki/index",
-    "pages/index/index",
-    "pages/logs/logs"
+    "pages/yuuki/index"
   ],
   "window": {
     "navigationBarTextStyle": "black",

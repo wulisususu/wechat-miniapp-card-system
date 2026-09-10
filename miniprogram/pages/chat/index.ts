@@ -88,7 +88,7 @@ Page({
     }
 
     if (!messages.length) {
-      messages = [makeMessage('bot', '已连接测试服。直接输入指令即可。')];
+      messages = [makeMessage('bot', '已连接激活码服务。直接输入指令即可。')];
     }
 
     this.setData({ messages, animateScroll: false }, () => {
@@ -180,10 +180,10 @@ Page({
   },
 
   onShareAppMessage() {
-    return { title: '测试服管理', path: '/pages/chat/index' };
+    return { title: '激活码服务', path: '/pages/chat/index' };
   },
 
   onShareTimeline() {
-    return { title: '测试服管理' };
+    return { title: '激活码服务' };
   }
 });
